@@ -1,0 +1,8 @@
+# Test: Variable assignment
+# Expected: 25
+void main([string] args) {
+    int x = 10;
+    x = 20;
+    x = x + 5;
+    print_int(x);
+}

@@ -1,0 +1,8 @@
+# Test: Wrong number of arguments
+int add(int a, int b) {
+    return a + b;
+}
+
+void main([string] args) {
+    return add(5);  # Wrong number of arguments
+}

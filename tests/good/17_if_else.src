@@ -1,0 +1,12 @@
+# Test: If-else statement
+# Expected: 2
+void main([string] args) {
+    int x = 5;
+    int result;
+    if x > 10 {
+        result = 1;
+    } else {
+        result = 2;
+    }
+    print_int(result);
+}

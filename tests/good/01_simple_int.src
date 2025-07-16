@@ -1,0 +1,5 @@
+# Test: Simple integer return
+# Expected: 42
+void main([string] args) {
+    print_int(42);
+}

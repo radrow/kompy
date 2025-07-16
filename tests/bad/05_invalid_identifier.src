@@ -1,0 +1,5 @@
+# Test: Invalid identifier (starts with number)
+void main([string] args) {
+    int 123abc = 42;  # Invalid identifier
+    return 123abc;
+}

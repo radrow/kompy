@@ -1,0 +1,12 @@
+# Test: Multiple functions
+int multiply(int a, int b) {
+    return a * b;
+}
+
+int square(int x) {
+    return multiply(x, x);
+}
+
+void main([string] args) {
+    print_int(square(5));
+}

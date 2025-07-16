@@ -1,0 +1,4 @@
+# Test: Missing parentheses
+void main([string] args) {
+    return 42;
+# Missing closing brace

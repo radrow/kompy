@@ -1,0 +1,4 @@
+# Test: Invalid string literal (unclosed)
+string main([string] args) {
+    return "unclosed string;  # Missing closing quote
+}

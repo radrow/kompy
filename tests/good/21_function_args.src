@@ -1,0 +1,8 @@
+# Test: Function call with arguments
+int add(int a, int b) {
+    return a + b;
+}
+
+void main([string] args) {
+    print_int(add(10, 20));
+}

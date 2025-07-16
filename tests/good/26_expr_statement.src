@@ -1,0 +1,6 @@
+# Test: Expression statements
+void main([string] args) {
+    int x = 5;
+    x + 10;  # expression statement
+    print_int(x);
+}

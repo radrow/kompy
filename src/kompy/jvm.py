@@ -1,6 +1,10 @@
-import attr
+"""
+Representation of the Java Virtual Machine assembly
+"""
 import typing
 from dataclasses import dataclass
+
+from attrs import mutable, field
 
 
 INIT_BLOCK = '$init'
@@ -14,6 +18,9 @@ class Instr:
 
     def __str__(self) -> str:
         if self.operand is not None:
+            # For ldc with string operands, we need to quote the string
+            if self.opcode == "ldc" and isinstance(self.operand, str):
+                return f"{self.opcode} \"{self.operand}\""
             return f"{self.opcode} {self.operand}"
         return self.opcode
 
@@ -24,14 +31,13 @@ class Instr:
         if -1 <= val <= 5:
             # Some `iconst` have fixed variants
             return cls(f"iconst_{val}")
-        elif -128 <= val <= 127:
+        if -128 <= val <= 127:
             # Bytes
             return cls("bipush", val)
-        elif -32768 <= val <= 32767:
+        if -32768 <= val <= 32767:
             # Short int
             return cls("sipush", val)
-        else:
-            return cls("ldc", val)
+        return cls("ldc", val)
 
     @classmethod
     def aconst_null(cls) -> "Instr":
@@ -227,6 +233,10 @@ class Instr:
     def new(cls, typename: str) -> "Instr":
         return cls("new", typename)
 
+    @classmethod
+    def getstatic(cls, src: str, typename: str) -> "Instr":
+        return cls("getstatic", f'{src} {typename}')
+
     # --- Raw instruction ---
 
     @classmethod
@@ -237,18 +247,18 @@ class Instr:
         return cls(opcode, operand)
 
 
-@attr.s(auto_attribs=True, kw_only=True)
+@mutable(auto_attribs=True, kw_only=True)
 class Block:
     """
     Block is a sequence of instructions
     """
-    instructions: typing.List[Instr] = attr.Factory(list)
+    instructions: typing.List[Instr] = field(factory=list)
 
     def append(self, instr: typing.Union[Instr, typing.Iterable[Instr]]):
         if isinstance(instr, Instr):
-            self.instructions += [instr]
+            self.instructions.append(instr)
         else:
-            self.instructions += instr
+            self.instructions.extend(instr)
 
     def gen(self):
         lines = []
@@ -257,16 +267,16 @@ class Block:
         return '\n'.join(lines)
 
 
-@attr.s(auto_attribs=True, kw_only=True)
+@mutable(auto_attribs=True, kw_only=True)
 class Method:
     visibility: typing.Literal['public', 'private', 'protected', '']
     name: str
     static: bool
-    args: typing.List[str]
+    args: typing.List[str] = field(factory=list)
     ret: str
     stack: int
     local: int
-    blocks: typing.Dict[str, Block] = {}
+    blocks: typing.Dict[str, Block] = field(factory=dict)
 
     def gen(self):
         lines = []
@@ -278,23 +288,24 @@ class Method:
         init = blocks.pop(INIT_BLOCK)
 
         lines.append('')
-        for instr in init:
-            lines.append(f'{INDENT}{instr}')
+        lines.append(f'{INIT_BLOCK}:')
+        lines.append(init.gen())
 
         for label, block in blocks.items():
             lines.append('')
             lines.append(f'{label}:')
             lines.append(block.gen())
 
-        return '\n'.join(lines)
+        lines.append('.end method')
+        return '\n'.join(lines) + '\n'
 
 
-@attr.s(auto_attribs=True, kw_only=True)
+@mutable(auto_attribs=True, kw_only=True)
 class Class:
     name: str
     visibility: typing.Literal['public', 'private', 'protected', '']
     superclass: str
-    methods: typing.List[Method]
+    methods: typing.List[Method] = field(factory=list)
 
     def gen(self):
         lines = []

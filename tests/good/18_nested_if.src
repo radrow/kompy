@@ -1,0 +1,16 @@
+# Test: Nested if statements
+# Expected: 2
+void main([string] args) {
+    int x = 15;
+    int result;
+    if x > 10 {
+        if x > 20 {
+            result = 1;
+        } else {
+            result = 2;
+        }
+    } else {
+        result = 3;
+    }
+    print_int(result);
+}

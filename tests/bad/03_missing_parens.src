@@ -1,0 +1,4 @@
+# Test: Missing parentheses in function declaration
+int main {  # Missing parentheses
+    return 42;
+}

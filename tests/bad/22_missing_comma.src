@@ -1,0 +1,8 @@
+# Test: Missing comma in parameter list
+int add(int a int b) {  # Missing comma
+    return a + b;
+}
+
+void main([string] args) {
+    return add(5, 10);
+}

@@ -1,0 +1,2 @@
+# Test: Missing function body
+void main([string] args);  # Missing function body

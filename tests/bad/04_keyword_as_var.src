@@ -1,0 +1,5 @@
+# Test: Invalid identifier (keyword)
+void main([string] args) {
+    int if = 42;  # 'if' is a keyword
+    return if;
+}

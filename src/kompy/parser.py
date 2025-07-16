@@ -1,5 +1,6 @@
-import parsy as P
 from pathlib import Path
+
+import parsy as P
 
 from . import ast
 from . import lexer as L
@@ -9,10 +10,10 @@ from .lexer import lex
 # ==============================================================================
 # General
 
-def parse_file(filepath: Path | str):
+def parse_file(filepath: Path | str) -> ast.Program:
     filepath = Path(filepath)
     content = filepath.read_text(encoding='utf-8')
-    return program.parse(content)
+    return program(module_name=filepath.stem).parse(content)
 
 
 def parens(pars):
@@ -124,7 +125,14 @@ def expr_op():
     return stack[0]
 
 
+expr_unop = P.seq(
+    fun=L.unop,
+    args=expr.map(lambda e: [e])
+).combine_dict(ast.Call)
+
+
 expr.become(P.alt(
+    expr_unop,
     expr_op,
     expr_atom,
 ).desc("expression"))
@@ -133,9 +141,18 @@ expr.become(P.alt(
 # ==============================================================================
 # Type
 
+typ = P.forward_declaration()
+
 type_var = L.ident.map(lambda v: ast.TypeVar(name=v))
 
-typ = type_var.desc("type")
+type_arr = (L.lsbrac >> typ << L.rsbrac).map(lambda t: ast.TypeArr(el=t))
+
+typ.become(
+    P.alt(
+        type_arr,
+        type_var,
+    ).desc("type")
+)
 
 
 # ==============================================================================
@@ -147,8 +164,7 @@ block = P.forward_declaration()
 stmt_var_decl = P.seq(
     typ=typ,
     name=L.ident,
-    _eq=L.token('='),
-    value=expr.optional(),
+    value=(L.token('=') >> expr).optional(),
     _semi=L.semicolon,
 ).combine_dict(ast.VarDecl)
 
@@ -200,7 +216,6 @@ top_fundecl = P.seq(
     body=block,
 ).combine_dict(ast.FunDecl)
 
-program = L.skip >> top_fundecl.many()
 
-# Keep src for backward compatibility
-src = program
+def program(module_name: str):
+    return L.skip >> top_fundecl.many().map(lambda decls: ast.Program(decls=decls, name=module_name))

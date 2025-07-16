@@ -1,15 +1,24 @@
-import attr
+"""
+Decorating AST with type annotations
+"""
+import attrs
 
 from . import ast
 
 
-@attr.s(frozen=True, auto_attribs=True, kw_only=False)
+@attrs.frozen(auto_attribs=True, kw_only=False)
 class TypecheckError(Exception):
+    """
+    Exception class for user errors
+    """
     msg: str
 
 
 def typed(node, typ):
-    return attr.evolve(node, type=typ)
+    """
+    Decorates an expression with a type annotation
+    """
+    return attrs.evolve(node, type=typ)
 
 
 t_int = ast.TypeVar(name='int')
@@ -20,7 +29,12 @@ t_string = ast.TypeVar(name='string')
 
 t_void = ast.TypeVar(name='void')
 
-return_t = '$RETURN'
+RETURN_VAR = '$RETURN'
+
+
+def t_arr(el):
+    return ast.TypeArr(el=el)
+
 
 def t_fun(args, ret):
     try:
@@ -44,7 +58,11 @@ def init_env():
         '<=': t_fun([t_int, t_int], t_bool),
         '||': t_fun([t_bool, t_bool], t_bool),
         '&&': t_fun([t_bool, t_bool], t_bool),
-        'print_int': t_fun(t_int, t_void)
+        '!': t_fun([t_bool], t_bool),
+        'print_int': t_fun(t_int, t_void),
+        'print_bool': t_fun(t_bool, t_void),
+        'print_string': t_fun(t_string, t_void),
+        'itos': t_fun(t_int, t_string),
     }
 
 
@@ -55,7 +73,7 @@ def get_var(env, name):
 
 
 def get_return(env):
-    return env[return_t]
+    return env[RETURN_VAR]
 
 
 def match_type(t_super, t_sub):
@@ -67,6 +85,9 @@ def match_type(t_super, t_sub):
 
 
 def tc_expr(env, expr):
+    """
+    Typechecks an expression
+    """
     match expr:
         case ast.Var(name=v):
             return typed(expr, get_var(env, v))
@@ -84,7 +105,7 @@ def tc_expr(env, expr):
             op_l_t = tc_expr(env, op_l)
             op_r_t = tc_expr(env, op_r)
             match_type(op_l_t.type, op_r_t.type)
-            return attr.evolve(
+            return attrs.evolve(
                 expr,
                 args=(op_l_t, op_r_t),
                 type=t_bool
@@ -97,55 +118,65 @@ def tc_expr(env, expr):
                     raise TypecheckError(f"Not a function: {fun_t}")
                 case ast.TypeFun(args=arg_types, ret=ret):
                     if len(args) != len(arg_types):
-                        raise TypecheckError(f"Argument number mismatch")
+                        raise TypecheckError(f"Argument number mismatch: expected {len(arg_types)}, got {len(args)}")
                     args_t = []
                     for (arg, arg_type) in zip(args, arg_types):
                         arg_t = tc_expr(env, arg)
                         match_type(arg_type, arg_t.type)
                         args_t.append(arg_t)
-                    return attr.evolve(
+                    return attrs.evolve(
                         expr,
                         args=args_t,
                         type=ret
                     )
 
 
-def tc_block(env, block):
+def tc_block(env, tail, block):
+    """
+    Incrementally typechecks a block of statements
+    """
     env = env.copy()
 
     block_t = []
 
-    for stmt in block.stmts:
+    for i, stmt in enumerate(block.stmts):
+        # Check if in tail position
+        tail = tail and i == len(block.stmts) - 1
+
         match stmt:
             case ast.SExpr(expr=expr):
+                if tail:
+                    raise TypecheckError("Missing return")
                 expr_t = tc_expr(env, expr)
-                stmt_t = attr.evolve(
+                stmt_t = attrs.evolve(
                     stmt,
                     expr=expr_t
                 )
             case ast.Return(expr=expr):
                 expr_t = tc_expr(env, expr)
-                match_type(get_return(env), expr_t.type)
-                stmt_t = attr.evolve(
+                match_type(get_return(env), expr_t.type if expr_t else t_void)
+                stmt_t = attrs.evolve(
                     stmt,
                     expr=expr_t
                 )
             case ast.If(cond=cond, then_block=then_block, else_block=else_block):
                 cond_t = tc_expr(env, cond)
                 match_type(t_bool, cond_t.type)
-                then_block_t = tc_block(env, then_block)
+                then_block_t = tc_block(env, tail, then_block)
 
                 else_block_t = None
                 if else_block:
-                    else_block_t = tc_block(env, else_block)
+                    else_block_t = tc_block(env, tail, else_block)
 
-                stmt_t = attr.evolve(
+                stmt_t = attrs.evolve(
                     stmt,
                     cond=cond_t,
                     then_block=then_block_t,
                     else_block=else_block_t
                 )
             case ast.VarDecl(typ=typ, name=name, value=value):
+                if tail:
+                    raise TypecheckError("Missing return")
                 value_t = None
                 if value:
                     # We check the value before we update the env to handle
@@ -153,15 +184,17 @@ def tc_block(env, block):
                     value_t = tc_expr(env, value)
                     match_type(typ, value_t.type)
                 env[name] = typ
-                stmt_t = attr.evolve(
+                stmt_t = attrs.evolve(
                     stmt,
                     value=value_t
                 )
             case ast.Assg(name=name, value=value):
+                if tail:
+                    raise TypecheckError("Missing return")
                 value_t = tc_expr(env, value)
                 var_type = get_var(env, name)
                 match_type(var_type, value_t.type)
-                stmt_t = attr.evolve(
+                stmt_t = attrs.evolve(
                     stmt,
                     value=value_t
                 )
@@ -172,6 +205,9 @@ def tc_block(env, block):
 
 
 def tc_decl(env, decl):
+    """
+    Typechecks a top-level declaration
+    """
     env = env.copy()
 
     match decl:
@@ -180,21 +216,26 @@ def tc_decl(env, decl):
                 args=args,
                 body=body,
         ):
-            env[return_t] = ret
+            env[RETURN_VAR] = ret
             for (arg_t, arg_n) in args:
                 env[arg_n] = arg_t
-            body_t = tc_block(env, body)
-            return attr.evolve(
+            # Only require return statement for non-void functions
+            requires_return = ret.name != "void"
+            body_t = tc_block(env, tail=requires_return, block=body)
+
+            return attrs.evolve(
                 decl,
                 body=body_t
             )
 
 
-def tc_src(env, decls):
+def tc_program(env, program):
     # First, add all function signatures
-    for decl in decls:
+    for decl in program.decls:
         match decl:
             case ast.FunDecl(ret=ret, name=name, args=args):
+                if name in env:
+                    raise TypecheckError(f"Redefinition of function {name}")
                 env[name] = ast.TypeFun(
                     ret=ret,
                     args=[arg_t for arg_t, _ in args]
@@ -202,10 +243,13 @@ def tc_src(env, decls):
             case _:
                 pass
 
+    if 'main' in env and env['main'] != ast.TypeFun(args=[t_arr(t_string)], ret=t_void):
+        raise TypecheckError(f"Invalid type of 'main': {env['main']}")
+
     # Typecheck all declarations in the updated env
     decls_t = []
-    for decl in decls:
+    for decl in program.decls:
         decl_t = tc_decl(env, decl)
         decls_t.append(decl_t)
 
-    return decls_t
+    return attrs.evolve(program, decls=decls_t)

@@ -1,0 +1,4 @@
+# Test: Undefined function
+void main([string] args) {
+    return undefined_func();  # Function not declared
+}

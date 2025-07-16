@@ -1,0 +1,6 @@
+# Test: Variable declaration with initialization
+# Expected: 42
+void main([string] args) {
+    int x = 42;
+    print_int(x);
+}

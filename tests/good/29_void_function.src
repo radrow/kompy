@@ -1,0 +1,9 @@
+# Test: Function with no return (void)
+void print_hello() {
+    # This would normally print, but we can't test output easily
+}
+
+void main([string] args) {
+    print_hello();
+    print_int(0);
+}

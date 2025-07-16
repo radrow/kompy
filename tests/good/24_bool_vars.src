@@ -1,0 +1,6 @@
+# Test: Boolean variables
+void main([string] args) {
+    bool x = true;
+    bool y = false;
+    print_bool(x && !y);
+}

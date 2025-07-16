@@ -1,0 +1,12 @@
+# Test: Function redefinition
+int func() {
+    return 1;
+}
+
+int func() {  # Function redefinition
+    return 2;
+}
+
+void main([string] args) {
+    return func();
+}

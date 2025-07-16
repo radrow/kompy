@@ -1,51 +1,65 @@
+"""
+Abstract Syntax Tree.
+"""
 import typing
-import attr
+from attrs import frozen, field
 
 
-@attr.s(frozen=True)
+@frozen
 class Node:
-    pass
+    """
+    Generic AST node
+    """
 
 
 # ==============================================================================
 # Expressions
 
-@attr.s(frozen=True)
+@frozen(auto_attribs=True, kw_only=True)
 class Expr(Node):
-    type: typing.Any = attr.ib(default=None, kw_only=True)
+    """
+    Expressions — anything that can be evaluated into a value
+    """
+    type: 'typing.Optional[Type]' = field(default=None)
 
 
-@attr.s(frozen=True, auto_attribs=True, kw_only=True)
+@frozen(auto_attribs=True, kw_only=True)
 class Var(Expr):
+    """
+    Variable
+    """
     name: str
 
 
-@attr.s(frozen=True, auto_attribs=True, kw_only=True)
+@frozen(auto_attribs=True, kw_only=True)
 class Int(Expr):
+    """
+    Integer literal
+    """
     v: int
 
-    def __int__(self):
-        return self.v
 
-
-@attr.s(frozen=True, auto_attribs=True, kw_only=True)
+@frozen(auto_attribs=True, kw_only=True)
 class Bool(Expr):
+    """
+    Boolean literal (`true`/`false`)
+    """
     v: bool
 
-    def __bool__(self):
-        return self.v
 
-
-@attr.s(frozen=True, auto_attribs=True, kw_only=True)
+@frozen(auto_attribs=True, kw_only=True)
 class String(Expr):
+    """
+    String literal
+    """
     v: str
 
-    def __str__(self):
-        return self.v
 
-
-@attr.s(frozen=True, auto_attribs=True, kw_only=True)
+@frozen(auto_attribs=True, kw_only=True)
 class Call(Expr):
+    """
+    Function call
+    """
     fun: str
     args: typing.List[Expr]
 
@@ -53,18 +67,35 @@ class Call(Expr):
 # ==============================================================================
 # Types
 
-@attr.s(frozen=True)
+@frozen()
 class Type(Node):
-    pass
+    """
+    Type of an expression
+    """
 
 
-@attr.s(frozen=True, auto_attribs=True, kw_only=True)
+@frozen(auto_attribs=True, kw_only=True)
 class TypeVar(Type):
+    """
+    Constant type variable, such as `int`
+    """
     name: str
 
 
-@attr.s(frozen=True, auto_attribs=True, kw_only=True)
+@frozen(auto_attribs=True, kw_only=True)
+class TypeArr(Type):
+    """
+    Array type
+    """
+    el: Type
+
+
+@frozen(auto_attribs=True, kw_only=True)
 class TypeFun(Type):
+    """
+    Functional type. Not available in the syntax (thus technically
+    shouldn't be here).
+    """
     args: typing.List[Type]
     ret: Type
 
@@ -72,41 +103,61 @@ class TypeFun(Type):
 # ==============================================================================
 # Statements
 
-@attr.s(frozen=True)
+@frozen()
 class Stmt(Node):
-    pass
+    """
+    Statement
+    """
 
 
-@attr.s(frozen=True, auto_attribs=True)
+@frozen(auto_attribs=True)
 class Block(Node):
+    """
+    Block is a list of statements enclosed with `{ }`
+    """
     stmts: typing.List[Stmt]
 
 
-@attr.s(frozen=True, auto_attribs=True, kw_only=True)
+@frozen(auto_attribs=True, kw_only=True)
 class SExpr(Stmt):
+    """
+    Plain expression in a statement position. E.g. `print_string("hello")`
+    """
     expr: Expr
 
 
-@attr.s(frozen=True, auto_attribs=True, kw_only=True)
+@frozen(auto_attribs=True, kw_only=True)
 class VarDecl(Stmt):
+    """
+    Variable declaration with optional assignment
+    """
     typ: Type
     name: str
     value: typing.Optional[Expr] = None
 
 
-@attr.s(frozen=True, auto_attribs=True, kw_only=True)
+@frozen(auto_attribs=True, kw_only=True)
 class Assg(Stmt):
+    """
+    Variable assignment
+    """
     name: str
     value: Expr
 
 
-@attr.s(frozen=True, auto_attribs=True, kw_only=True)
+@frozen(auto_attribs=True, kw_only=True)
 class Return(Stmt):
+    """
+    Return statement
+    """
     expr: typing.Optional[Expr] = None
 
 
-@attr.s(frozen=True, auto_attribs=True, kw_only=True)
+@frozen(auto_attribs=True, kw_only=True)
 class If(Stmt):
+    """
+    If statement with optional `else` clause
+    """
     cond: Expr
     then_block: Block
     else_block: typing.Optional[Block] = None
@@ -115,14 +166,28 @@ class If(Stmt):
 # ==============================================================================
 # Top-level declarations
 
-@attr.s(frozen=True)
+@frozen()
 class TopDecl(Node):
-    pass
+    """
+    Top-level declaration
+    """
 
 
-@attr.s(frozen=True, auto_attribs=True, kw_only=True)
+@frozen(auto_attribs=True, kw_only=True)
 class FunDecl(TopDecl):
+    """
+    Function declaration
+    """
     name: str
-    args: typing.List[typing.Tuple[str, Type]]
+    args: typing.List[typing.Tuple[Type, str]]
     ret: Type
     body: Block
+
+
+@frozen(auto_attribs=True, kw_only=True)
+class Program(Node):
+    """
+    Program consists of top-level declarations
+    """
+    name: str
+    decls: typing.List[TopDecl]

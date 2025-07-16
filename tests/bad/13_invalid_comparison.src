@@ -1,0 +1,4 @@
+# Test: Invalid operation (comparing different types)
+bool main([string] args) {
+    return 5 == "hello";  # Type mismatch in comparison
+}

@@ -45,6 +45,9 @@ rparen = token(')')
 lbrac = token('{')
 rbrac = token('}')
 
+lsbrac = token('[')
+rsbrac = token(']')
+
 
 def kw(kw):
     if kw not in keywords:
@@ -70,10 +73,10 @@ def gen_string():
     chars = []
 
     while True:
-        c = yield P.any(
+        c = yield P.alt(
             P.regex(r'[^"\\]'),  # Any char except escape and close
             P.string('\\') >>  # Escape sequence and...
-            P.any(
+            P.alt(
                 P.string('"'),
                 P.string('\\'),
                 P.string('n').result('\n'),
@@ -81,7 +84,7 @@ def gen_string():
                 P.string('r').result('\r'),
                 P.string('b').result('\b'),
             )
-        )
+        ).optional()
 
         if c is None:
             break
@@ -100,14 +103,18 @@ op = lex(P.alt(
     P.string('*'),
     P.string('/'),
     P.string('%'),
-    P.string('>'),
-    P.string('<'),
     P.string('>='),
     P.string('<='),
     P.string('=='),
     P.string('!='),
+    P.string('>'),
+    P.string('<'),
     P.string('||'),
     P.string('&&'),
+).desc("operator"))
+
+unop = lex(P.alt(
+    P.string('!')
 ).desc("operator"))
 
 semicolon = token(';')

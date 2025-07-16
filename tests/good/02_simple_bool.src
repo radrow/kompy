@@ -1,0 +1,5 @@
+# Test: Simple boolean return
+# Expected: 1
+void main([string] args) {
+    print_bool(true);
+}

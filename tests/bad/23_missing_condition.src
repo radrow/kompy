@@ -1,0 +1,7 @@
+# Test: Missing condition in if statement
+void main([string] args) {
+    if {  # Missing condition
+        return 1;
+    }
+    return 0;
+}

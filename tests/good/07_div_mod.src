@@ -1,0 +1,5 @@
+# Test: Division and modulo
+# Expected: 7
+void main([string] args) {
+    print_int(17 / 3 + 17 % 3);
+}

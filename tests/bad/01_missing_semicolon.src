@@ -1,0 +1,4 @@
+# Test: Missing semicolon
+void main([string] args) {
+    return 42  # Missing semicolon
+}

@@ -1,0 +1,5 @@
+# Test: Parentheses for precedence
+# Expected: 20
+void main([string] args) {
+    print_int((2 + 3) * 4);
+}

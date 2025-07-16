@@ -1,0 +1,7 @@
+# Test: Variable declaration and usage
+# Expected: 30
+void main([string] args) {
+    int x = 10;
+    int y = 20;
+    print_int(x + y);
+}

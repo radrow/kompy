@@ -1,0 +1,5 @@
+# Test: String return
+# Expected: Hello World
+void main([string] args) {
+    print_string("Hello World");
+}

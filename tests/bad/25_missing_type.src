@@ -1,0 +1,5 @@
+# Test: Missing type in variable declaration
+void main([string] args) {
+    x = 42;  # Missing type
+    return x;
+}

@@ -1,0 +1,8 @@
+# Test: Function call without arguments
+int helper() {
+    return 42;
+}
+
+void main([string] args) {
+    print_int(helper());
+}

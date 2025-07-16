@@ -1,0 +1,9 @@
+# Test: If statement with false condition
+# Expected: 42
+void main([string] args) {
+    int result = 42;
+    if false {
+        result = 0;
+    }
+    print_int(result);
+}

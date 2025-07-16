@@ -1,0 +1,4 @@
+# Test: Undefined variable
+void main([string] args) {
+    return undefined_var;  # Variable not declared
+}

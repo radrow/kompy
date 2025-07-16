@@ -1,0 +1,6 @@
+# Test: Missing assignment operator
+void main([string] args) {
+    int x;
+    x 42;  # Missing assignment operator
+    return x;
+}

@@ -1,0 +1,7 @@
+# Test: Multiple statements in block
+void main([string] args) {
+    int x = 10;
+    int y = 20;
+    int z = x + y;
+    print_int(z);
+}

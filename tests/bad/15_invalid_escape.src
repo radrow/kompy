@@ -1,0 +1,4 @@
+# Test: Invalid escape sequence
+string main([string] args) {
+    return "Invalid \q escape";  # Invalid escape sequence
+}
