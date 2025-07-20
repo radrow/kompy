@@ -22,8 +22,8 @@ class Feed:
         """
         Returns the most recent label.
         """
-        hint_str = f'__{hint}' if hint else ''
-        return f"{name}{hint_str}__{self.feed}"
+        hint_str = f'${hint}' if hint else ''
+        return f"{name}{hint_str}$__{self.feed}"
 
     def next(self, name, hint=None):
         """
@@ -59,9 +59,9 @@ class Env:
         if jvm.INIT_BLOCK not in self.blocks:
             self.blocks[jvm.INIT_BLOCK] = Block()
 
-    def bind_var(self, name):
+    def bind_var(self, name, typ):
         local = self.local.copy()
-        local[name] = self.next_local
+        local[name] = (self.next_local, typ)
         return attrs.evolve(self, local=local, next_local=self.next_local+1)
 
     def get_var(self, name):
@@ -72,7 +72,7 @@ class Env:
         Appends an instruction or a collection of instructions to the current
         block.
         """
-        self.blocks[self.current_block].append(instrs)
+        self.blocks[self.current_block].append(*instrs)
 
     def next_label(self, hint=None, next_feed=True):
         """
@@ -142,10 +142,10 @@ def compile_fun(env, fun, typ) -> Env:
         case '||':
             env.append(Instr.ior())
         case '!':
-            env.append([
+            env.append(
                 Instr.iconst(1),
                 Instr.ixor(),
-            ])
+            )
         case '==' | '!=' | '<' | '>' | '<=' | '>=':
             env = compile_cmp(env, fun)
         # Handle builtins
@@ -212,52 +212,52 @@ def icmp_instr(op):
 
 def compile_cmp(env: Env, op: str) -> Env:
     """
-    Compiles a comparison operator. If there is a branch, applies the appropriate conditional jump. Otherwise generates code that leaves 1 (true) or 0
-    (false) on the stack.
+    Compiles a comparison operator. If there is a branch, applies the
+    appropriate conditional jump. Otherwise generates code that leaves 1 (true)
+    or 0 (false) on the stack.
     """
 
     match env.next_block:
         case (if_then, if_else):
+            # Control flow branches depending on the result
             label_then, label_else = if_then, if_else
-        case _:
-            hint = op_hint(op)
 
+            # We consume the branching continuation. No need to keep track of
+            # it after.
+            env_after = env.with_next(None)
+        case _:
+            # The result is to be pushed onto the stack (as `1` or `0`). We
+            # need to generate blocks for those pushes.
+            hint = op_hint(op)
             label_then = env.new_block(hint=f'{hint}_true')
             label_else = env.new_block(hint=f'{hint}_false', next_feed=False)
 
-            label_after = env.next_block if env.next_block else env.new_block(hint=f'{hint}_after', next_feed=False)
+            # Inherit the continuation if defined, otherwise start a new block.
+            if env.next_block:
+                label_after = env.next_block
+            else:
+                label_after = env.new_block(hint=f'{hint}_after', next_feed=False)
 
+            # Block pushing 1
             env_then = env.in_block(label_then).with_next(label_after)
-            env.append(Instr.iconst(1))
+            env_then.append(Instr.iconst(1))
             env_then.close_block()
 
+            # Block pushing 0
             env_else = env.in_block(label_else).with_next(label_after)
-            env.append(Instr.iconst(0))
+            env_else.append(Instr.iconst(0))
             env_else.close_block()
 
-    env.append(icmp_instr(op))
+            # Continue
+            env_after = env.in_block(label_after)
 
-    # We subtract one operand from another, since the comparison is against 0
-    env.append(Instr.isub())
-
-    # Choose the appropriate conditional jump instruction
-    def compile_then_branch(env):
-        env.append(Instr.iconst(1))
-        return env
-
-    def compile_else_branch(env):
-        env.append(Instr.iconst(0))
-        return env
-
-    env = compile_cond(
-        env,
-        compile_then=compile_then_branch,
-        compile_else=compile_else_branch,
-        decider=zcmp_instr(op),
-        hint=op_hint(op)
+    # Apply branching
+    env.append(
+        icmp_instr(op)(label_then),
+        Instr.goto(label_else),
     )
 
-    return env
+    return env_after
 
 
 def compile_expr(env: Env, expr) -> Env:
@@ -266,20 +266,44 @@ def compile_expr(env: Env, expr) -> Env:
     """
     match expr:
         case ast.Int(v=v):
+            # Just push the int
             env.append(Instr.iconst(v))
+
         case ast.Bool(v=v):
+            # Bools are ints
             env.append(Instr.iconst(int(v)))
+
         case ast.String(v=v):
+            # Push the string
             env.append(Instr.ldc(v))
-        case ast.Var(name=name) if expr.type in [t.t_int, t.t_bool]:
-            env.append(Instr.iload(env.local[name]))
+
         case ast.Var(name=name):
-            env.append(Instr.aload(env.local[name]))
+            # Resolve the location of the variable
+            (loc, _typ) = env.get_var(name)
+
+            # Load from the storage
+            if expr.type in [t.t_int, t.t_bool]:
+                load = Instr.iload
+            else:
+                load = Instr.aload
+
+            env.append(load(loc))
+
         case ast.Call(fun=fun, args=args):
+            # Reconstruct the type of the function
             typ = ast.TypeFun(args=[arg.type for arg in args], ret=expr.type)
 
+            # Backup the continuation
+            next_block = env.next_block
+
+            # We want the args to be placed on the stack. We must temporarily
+            # forget about the continuation.
+            env = env.with_next(None)
             for arg in args:
                 env = compile_expr(env, arg)
+
+            # Bring back the original continuation and compile the function call.
+            env = env.with_next(next_block)
             env = compile_fun(env, fun, typ)
     return env
 
@@ -306,34 +330,49 @@ def compile_block(env: Env, block: ast.Block):
                 else:
                     env.append(Instr.return_())
 
-            case ast.If(cond=cond,
-                        then_block=then_block,
-                        else_block=else_block,
-                        ):
-                # Replace no `else` with `{ }`
+            case ast.If(
+                    cond=cond,
+                    then_block=then_block,
+                    else_block=else_block,
+            ):
+                # Replace no `else` with `{ }`.
                 if not else_block:
                     else_block = ast.Block(stmts=[])
 
+                # Add blocks for both branches.
                 label_then = env.new_block(hint='if_true')
                 label_else = env.new_block(hint='if_false', next_feed=False)
-                label_after = env.new_block(hint='if_after', next_feed=False)
 
+                # If needed, add a continuation block if there is anything
+                # after the `if`.
+                if env.next_block:
+                    label_after = env.new_block(hint='if_after', next_feed=False)
+                else:
+                    label_after = None
+                env_after = env.in_block(label_after)
+
+                # Compile the condition with branching continuation.
                 env = env.with_next((label_then, label_else))
                 env = compile_expr(env, cond)
                 env.close_block()
 
+                # Compile the positive and negative branch. Inherit the
+                # continuation.
                 env_then = env.in_block(label_then).with_next(label_after)
                 env_then = compile_block(env_then, then_block)
-                env_then.close_block()
 
                 env_else = env.in_block(label_else).with_next(label_after)
                 env_else = compile_block(env_else, else_block)
-                env_else.close_block()
 
-                env = env.in_block(label_after)
+                # We move to the continuation.
+                env = env_after
+
             case ast.VarDecl(typ=typ, name=name, value=value):
+                # Bind the variable in the env if it's not void
                 if typ != t.t_void:
-                    env = env.bind_var(name)
+                    env = env.bind_var(name, typ)
+
+                # Assign the initial value if provided
                 if value:
                     env = compile_expr(env, value)
                     match typ:
@@ -346,8 +385,9 @@ def compile_block(env: Env, block: ast.Block):
                         case _:
                             store = Instr.astore
                     if store:
-                        loc = env.get_var(name)
+                        (loc, _typ) = env.get_var(name)
                         env.append(store(loc))
+
             case ast.Assg(name=name, value=value):
                 env = compile_expr(env, value)
                 match value.type:
@@ -360,8 +400,10 @@ def compile_block(env: Env, block: ast.Block):
                     case _:
                         store = Instr.astore
                 if store:
-                    loc = env.get_var(name)
+                    (loc, _typ) = env.get_var(name)
                     env.append(store(loc))
+
+    # We apply any remaining continuation and return the updated env
     env.close_block()
     return env
 
@@ -390,8 +432,8 @@ def compile_type(ty: ast.Type) -> str:
 def compile_function(env: GlobEnv, fdecl: ast.FunDecl) -> jvm.Method:
     env = Env(global_env=env, current_method=fdecl.name)
 
-    for (_arg_t, arg_name) in fdecl.args:
-        env = env.bind_var(arg_name)
+    for (arg_t, arg_name) in fdecl.args:
+        env = env.bind_var(arg_name, arg_t)
 
     # Make sure void functions have a return
     if fdecl.ret == t.t_void:

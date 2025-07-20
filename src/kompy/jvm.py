@@ -4,6 +4,7 @@ Representation of the Java Virtual Machine assembly
 import typing
 import dataclasses
 from dataclasses import dataclass
+import json
 
 from attrs import mutable, field
 
@@ -28,7 +29,7 @@ class Instr:
         for op in self.operands:
             # For ldc with string operands, we need to quote the string
             if self.opcode == "ldc" and isinstance(op, str):
-                s += f" {op.__repr__()}"
+                s += f" {json.dumps(op)}"
             else:
                 s += f" {op}"
         return s
@@ -282,6 +283,7 @@ class Block:
 
     def gen(self):
         lines = []
+
         for instr in self.instructions:
             lines.append(f'{INDENT}{instr}')
         return '\n'.join(lines)
@@ -322,6 +324,9 @@ class Method:
 
 @mutable(auto_attribs=True, kw_only=True)
 class Class:
+    """
+    JVM class
+    """
     name: str
     visibility: typing.Literal['public', 'private', 'protected', '']
     superclass: str

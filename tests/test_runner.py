@@ -11,8 +11,10 @@ import subprocess
 import tempfile
 import shutil
 import re
+import traceback
 from typing import List, Dict, Any, Optional, Tuple
 
+import parsy
 
 from kompy import parser as p
 from kompy import typechecker as t
@@ -157,8 +159,12 @@ class TestRunner:
                 # Can't run jasmin, just check that it compiles
                 return TestResult(test_file.name, True, "Compiled to JVM successfully")
 
+        except parsy.ParseError as e:
+            return TestResult(test_file.name, False, f"Parse error: {e}")
+        except t.TypecheckError as e:
+            return TestResult(test_file.name, False, f"Type error: {e}")
         except Exception as e:
-            return TestResult(test_file.name, False, f"Error: {e}")
+            return TestResult(test_file.name, False, f"Fatal error: {e}\n{''.join(traceback.format_exception(e))}")
         finally:
             # Clean up generated files
             for ext in ['.j', '.class']:
@@ -244,9 +250,12 @@ class TestRunner:
             # If we get here, the test should have failed but didn't
             return TestResult(test_file.name, False, "Test should have failed but passed")
 
-        except Exception as e:
+        except t.TypecheckError as e:
             # This is expected for bad tests
-            return TestResult(test_file.name, True, f"Failed as expected: {e}")
+            return TestResult(test_file.name, True, f"Failed (T) as expected: {e}")
+        except parsy.ParseError as e:
+            # This is expected for bad tests
+            return TestResult(test_file.name, True, f"Failed (P) as expected: {e}")
 
     def _get_expected_output(self, test_file: pathlib.Path) -> Optional[str]:
         """
