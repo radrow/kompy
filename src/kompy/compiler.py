@@ -74,17 +74,18 @@ class Env:
         """
         self.blocks[self.current_block].append(instrs)
 
-    def next_label(self, hint=None):
+    def next_label(self, hint=None, next_feed=True):
         """
         Creates and returns a fresh label
         """
-        return self.feed.next(self.current_method, hint)
+        feeder = self.feed.next if next_feed else self.feed.get
+        return feeder(self.current_method, hint=hint)
 
-    def new_block(self, hint=None):
+    def new_block(self, hint=None, next_feed=True):
         """
         Creates a new block under a fresh label.
         """
-        label = self.next_label(hint=hint)
+        label = self.next_label(hint=hint, next_feed=next_feed)
         self.blocks[label] = Block()
         return label
 
@@ -107,12 +108,16 @@ class Env:
         """
         match self.next_block:
             case str():
+                # Jump to the next block
                 self.append(Instr.goto(self.next_block))
             case (next_then, next_else):
+                # Branch between blocks
                 self.append(
                     Instr.ifne(next_then),
                     Instr.goto(next_else),
                 )
+            case None:
+                pass
 
 
 def compile_fun(env, fun, typ) -> Env:
@@ -207,14 +212,35 @@ def icmp_instr(op):
 
 def compile_cmp(env: Env, op: str) -> Env:
     """
-    Compiles a comparison operator. Generates code that leaves 1 (true) or 0
+    Compiles a comparison operator. If there is a branch, applies the appropriate conditional jump. Otherwise generates code that leaves 1 (true) or 0
     (false) on the stack.
     """
+
+    match env.next_block:
+        case (if_then, if_else):
+            label_then, label_else = if_then, if_else
+        case _:
+            hint = op_hint(op)
+
+            label_then = env.new_block(hint=f'{hint}_true')
+            label_else = env.new_block(hint=f'{hint}_false', next_feed=False)
+
+            label_after = env.next_block if env.next_block else env.new_block(hint=f'{hint}_after', next_feed=False)
+
+            env_then = env.in_block(label_then).with_next(label_after)
+            env.append(Instr.iconst(1))
+            env_then.close_block()
+
+            env_else = env.in_block(label_else).with_next(label_after)
+            env.append(Instr.iconst(0))
+            env_else.close_block()
+
+    env.append(icmp_instr(op))
+
     # We subtract one operand from another, since the comparison is against 0
     env.append(Instr.isub())
 
     # Choose the appropriate conditional jump instruction
-
     def compile_then_branch(env):
         env.append(Instr.iconst(1))
         return env
@@ -258,26 +284,6 @@ def compile_expr(env: Env, expr) -> Env:
     return env
 
 
-def compile_cond(env: Env, compile_then, compile_else, decider=Instr.ifne, hint=None) -> Env:
-    """
-    Compiles an `if` expression/statement. Returns the environment after the conditional.
-    """
-    label_then = env.new_block(hint=f'{hint}_true' if hint else None)
-    label_else = env.new_block(hint=f'{hint}_false' if hint else None)
-    label_after = env.new_block(hint=f'{hint}_after' if hint else None)
-
-    env.append(decider(label_then))
-    env.append(Instr.goto(label_else))
-
-    env_then = compile_then(env.in_block(label_then).with_next(label_after))
-    env_then.close_block()
-
-    env_else = compile_else(env.in_block(label_else).with_next(label_after))
-    env_else.close_block()
-
-    return env.in_block(label_after)
-
-
 def compile_block(env: Env, block: ast.Block):
     """
     Compiles a block of statements.
@@ -308,22 +314,23 @@ def compile_block(env: Env, block: ast.Block):
                 if not else_block:
                     else_block = ast.Block(stmts=[])
 
-                # Compile condition
+                label_then = env.new_block(hint='if_true')
+                label_else = env.new_block(hint='if_false', next_feed=False)
+                label_after = env.new_block(hint='if_after', next_feed=False)
+
+                env = env.with_next((label_then, label_else))
                 env = compile_expr(env, cond)
+                env.close_block()
 
-                # Compile branches. Doing it this way because Python is stupid af
-                def compile_then(env, e=then_block):
-                    return compile_block(env, e)
+                env_then = env.in_block(label_then).with_next(label_after)
+                env_then = compile_block(env_then, then_block)
+                env_then.close_block()
 
-                def compile_else(env, e=else_block):
-                    return compile_block(env, e)
+                env_else = env.in_block(label_else).with_next(label_after)
+                env_else = compile_block(env_else, else_block)
+                env_else.close_block()
 
-                env = compile_cond(
-                    env,
-                    compile_then=compile_then,
-                    compile_else=compile_else,
-                    hint='if'
-                )
+                env = env.in_block(label_after)
             case ast.VarDecl(typ=typ, name=name, value=value):
                 if typ != t.t_void:
                     env = env.bind_var(name)
@@ -367,7 +374,7 @@ def compile_type(ty: ast.Type) -> str:
         case ast.TypeVar(name='int'):
             return 'I'
         case ast.TypeVar(name='bool'):
-            return 'I'
+            return 'Z'
         case ast.TypeVar(name='string'):
             return 'Ljava/lang/String;'
         case ast.TypeVar(name='void'):
