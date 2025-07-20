@@ -2,6 +2,7 @@
 Representation of the Java Virtual Machine assembly
 """
 import typing
+import dataclasses
 from dataclasses import dataclass
 
 from attrs import mutable, field
@@ -13,16 +14,24 @@ INDENT = '    '
 
 @dataclass
 class Instr:
+    """
+    Single JVM instruction
+    """
     opcode: str
-    operand: typing.Optional[typing.Union[int, str]] = None
+    operands: typing.List[typing.Union[int, str]] = dataclasses.field(default_factory=list)
+    branching: typing.Optional[str] = None
+    breaking: bool = False
+    stack_delta: typing.Union[int, typing.List[int]] = 0
 
     def __str__(self) -> str:
-        if self.operand is not None:
+        s = self.opcode
+        for op in self.operands:
             # For ldc with string operands, we need to quote the string
-            if self.opcode == "ldc" and isinstance(self.operand, str):
-                return f"{self.opcode} \"{self.operand}\""
-            return f"{self.opcode} {self.operand}"
-        return self.opcode
+            if self.opcode == "ldc" and isinstance(op, str):
+                s += f" {op.__repr__()}"
+            else:
+                s += f" {op}"
+        return s
 
     # --- Literal / Constant instructions ---
 
@@ -30,36 +39,36 @@ class Instr:
     def iconst(cls, val: int) -> "Instr":
         if -1 <= val <= 5:
             # Some `iconst` have fixed variants
-            return cls(f"iconst_{val}")
+            return cls(f"iconst_{val}", stack_delta=1)
         if -128 <= val <= 127:
             # Bytes
-            return cls("bipush", val)
+            return cls("bipush", [val], stack_delta=1)
         if -32768 <= val <= 32767:
             # Short int
-            return cls("sipush", val)
-        return cls("ldc", val)
+            return cls("sipush", [val], stack_delta=1)
+        return cls("ldc", [val], stack_delta=1)
 
     @classmethod
     def aconst_null(cls) -> "Instr":
-        return cls("aconst_null")
+        return cls("aconst_null", stack_delta=1)
 
     @classmethod
     def ldc(cls, value: typing.Union[str, int]) -> "Instr":
-        return cls("ldc", value)
+        return cls("ldc", [value], stack_delta=1)
 
     # --- Stack operations ---
 
     @classmethod
     def pop(cls) -> "Instr":
-        return cls("pop")
+        return cls("pop", stack_delta=-1)
 
     @classmethod
     def dup(cls) -> "Instr":
-        return cls("dup")
+        return cls("dup", stack_delta=1)
 
     @classmethod
     def dup2(cls) -> "Instr":
-        return cls("dup2")
+        return cls("dup2", stack_delta=[1, 2])
 
     @classmethod
     def swap(cls) -> "Instr":
@@ -70,64 +79,68 @@ class Instr:
     @classmethod
     def iload(cls, index: int) -> "Instr":
         return cls(f"iload_{index}" if index <= 3 else "iload",
-                   index if index > 3 else None
+                   [index] if index > 3 else [],
+                   stack_delta=1,
                    )
 
     @classmethod
     def istore(cls, index: int) -> "Instr":
         return cls(f"istore_{index}" if index <= 3 else "istore",
-                   index if index > 3 else None
+                   [index] if index > 3 else [],
+                   stack_delta=-1,
                    )
 
     @classmethod
     def aload(cls, index: int) -> "Instr":
         return cls(f"aload_{index}" if index <= 3 else "aload",
-                   index if index > 3 else None
+                   [index] if index > 3 else [],
+                   stack_delta=1,
                    )
 
     @classmethod
     def astore(cls, index: int) -> "Instr":
         return cls(f"astore_{index}" if index <= 3 else "astore",
-                   index if index > 3 else None
+                   [index] if index > 3 else [],
+                   stack_delta=-1,
                    )
 
     # --- Arithmetic (int) ---
 
     @classmethod
     def iadd(cls) -> "Instr":
-        return cls("iadd")
+        return cls("iadd", stack_delta=-1)
 
     @classmethod
     def isub(cls) -> "Instr":
-        return cls("isub")
+        return cls("isub", stack_delta=-1)
 
     @classmethod
     def imul(cls) -> "Instr":
-        return cls("imul")
+        return cls("imul", stack_delta=-1)
 
     @classmethod
     def idiv(cls) -> "Instr":
-        return cls("idiv")
+        return cls("idiv", stack_delta=-1)
 
     @classmethod
     def irem(cls) -> "Instr":
-        return cls("irem")
+        return cls("irem", stack_delta=-1)
 
     @classmethod
     def ineg(cls) -> "Instr":
-        return cls("ineg")
+        return cls("ineg", stack_delta=0)
 
     @classmethod
     def iand(cls) -> "Instr":
-        return cls("iand")
+        return cls("iand", stack_delta=-1)
 
     @classmethod
     def ior(cls) -> "Instr":
-        return cls("ior")
+        return cls("ior", stack_delta=-1)
 
     @classmethod
     def ixor(cls) -> "Instr":
-        return cls("ixor")
+        return cls("ixor", stack_delta=-1)
 
     # --- Shift ops ---
 
@@ -147,104 +160,114 @@ class Instr:
 
     @classmethod
     def ifeq(cls, label: str) -> "Instr":
-        return cls("ifeq", label)
+        return cls("ifeq", [label], branching=label, stack_delta=-1)
 
     @classmethod
     def ifne(cls, label: str) -> "Instr":
-        return cls("ifne", label)
+        return cls("ifne", [label], branching=label, stack_delta=-1)
 
     @classmethod
     def iflt(cls, label: str) -> "Instr":
-        return cls("iflt", label)
+        return cls("iflt", [label], branching=label, stack_delta=-1)
 
     @classmethod
     def ifle(cls, label: str) -> "Instr":
-        return cls("ifle", label)
+        return cls("ifle", [label], branching=label, stack_delta=-1)
 
     @classmethod
     def ifgt(cls, label: str) -> "Instr":
-        return cls("ifgt", label)
+        return cls("ifgt", [label], branching=label, stack_delta=-1)
 
     @classmethod
     def ifge(cls, label: str) -> "Instr":
-        return cls("ifge", label)
+        return cls("ifge", [label], branching=label, stack_delta=-1)
 
     # --- Conditional jumps (2-value int comparisons) ---
 
     @classmethod
     def if_icmpeq(cls, label: str) -> "Instr":
-        return cls("if_icmpeq", label)
+        return cls("if_icmpeq", [label], branching=label, stack_delta=-2)
 
     @classmethod
     def if_icmpne(cls, label: str) -> "Instr":
-        return cls("if_icmpne", label)
+        return cls("if_icmpne", [label], branching=label, stack_delta=-2)
 
     @classmethod
     def if_icmplt(cls, label: str) -> "Instr":
-        return cls("if_icmplt", label)
+        return cls("if_icmplt", [label], branching=label, stack_delta=-2)
 
     @classmethod
     def if_icmpgt(cls, label: str) -> "Instr":
-        return cls("if_icmpgt", label)
+        return cls("if_icmpgt", [label], branching=label, stack_delta=-2)
 
     @classmethod
     def if_icmple(cls, label: str) -> "Instr":
-        return cls("if_icmple", label)
+        return cls("if_icmple", [label], branching=label, stack_delta=-2)
 
     @classmethod
     def if_icmpge(cls, label: str) -> "Instr":
-        return cls("if_icmpge", label)
+        return cls("if_icmpge", [label], branching=label, stack_delta=-2)
 
     @classmethod
     def goto(cls, label: str) -> "Instr":
-        return cls("goto", label)
+        return cls("goto", [label], branching=label)
 
     # --- Return ---
 
     @classmethod
     def ireturn(cls) -> "Instr":
-        return cls("ireturn")
+        return cls("ireturn", breaking=True, stack_delta=-1)
 
     @classmethod
     def areturn(cls) -> "Instr":
-        return cls("areturn")
+        return cls("areturn", breaking=True, stack_delta=-1)
 
     @classmethod
     def return_(cls) -> "Instr":
-        return cls("return")
+        return cls("return", breaking=True, stack_delta=-1)
 
     # --- Method call ---
 
     @classmethod
     def invokevirtual(cls, method: str) -> "Instr":
-        return cls("invokevirtual", method)
+        #  TODO get type and compute based on it
+        return cls("invokevirtual", [method], stack_delta=[])
 
     @classmethod
     def invokestatic(cls, method: str) -> "Instr":
-        return cls("invokestatic", method)
+        return cls("invokestatic", [method], stack_delta=[])
 
     @classmethod
     def invokespecial(cls, method: str) -> "Instr":
-        return cls("invokespecial", method)
+        return cls("invokespecial", [method], stack_delta=[])
 
     # --- Object creation ---
 
     @classmethod
     def new(cls, typename: str) -> "Instr":
-        return cls("new", typename)
+        return cls("new", [typename], stack_delta=1)
 
     @classmethod
     def getstatic(cls, src: str, typename: str) -> "Instr":
-        return cls("getstatic", f'{src} {typename}')
+        return cls("getstatic", [src, typename], stack_delta=1)
 
     # --- Raw instruction ---
 
-    @classmethod
-    def raw(cls,
-            opcode: str,
-            operand: typing.Optional[typing.Union[int, str]] = None
-            ) -> "Instr":
-        return cls(opcode, operand)
+    # @classmethod
+    # def raw(cls,
+    #         opcode: str,
+    #         operands: typing.Optional[typing.List[typing.Union[int, str]]] = None,
+    #         breaking: bool = False,
+    #         branching: typing.Optional[str] = None,
+    #         stack_delta: typing.Union[int, typing.List[int]] = 0,
+    #         ) -> "Instr":
+    #     operands = operands if operands else []
+    #     return cls(opcode,
+    #                operands,
+    #                breaking=breaking,
+    #                branching=branching,
+    #                stack_delta=stack_delta
+    #                )
 
 
 @mutable(auto_attribs=True, kw_only=True)
@@ -254,11 +277,8 @@ class Block:
     """
     instructions: typing.List[Instr] = field(factory=list)
 
-    def append(self, instr: typing.Union[Instr, typing.Iterable[Instr]]):
-        if isinstance(instr, Instr):
-            self.instructions.append(instr)
-        else:
-            self.instructions.extend(instr)
+    def append(self, *instrs: Instr):
+        self.instructions.extend(instrs)
 
     def gen(self):
         lines = []

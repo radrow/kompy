@@ -1,5 +1,5 @@
 # Test: Missing return statement
-void main([string] args) {
+int f() {
     int x = 42;
     # Missing return statement
 }

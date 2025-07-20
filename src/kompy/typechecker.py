@@ -13,6 +13,8 @@ class TypecheckError(Exception):
     """
     msg: str
 
+# TODO error classes
+
 
 def typed(node, typ):
     """
@@ -219,9 +221,9 @@ def tc_decl(env, decl):
             env[RETURN_VAR] = ret
             for (arg_t, arg_n) in args:
                 env[arg_n] = arg_t
-            # Only require return statement for non-void functions
-            requires_return = ret.name != "void"
-            body_t = tc_block(env, tail=requires_return, block=body)
+
+            enforce_return = ret != t_void
+            body_t = tc_block(env, tail=enforce_return, block=body)
 
             return attrs.evolve(
                 decl,

@@ -51,7 +51,7 @@ class Env:
     local: typing.Dict[str, int] = field(factory=dict)
     next_local: int = 0
     current_block: str = jvm.INIT_BLOCK
-    next_block: typing.Optional[str] = None
+    next_block: typing.Union[None, str, typing.Tuple[str, str]] = None
     blocks: typing.Dict[str, Block] = field(factory=dict)
     feed: Feed = field(factory=Feed)
 
@@ -67,12 +67,12 @@ class Env:
     def get_var(self, name):
         return self.local[name]
 
-    def append(self, instr: typing.Union[Instr, typing.Iterable[Instr]]):
+    def append(self, *instrs: Instr):
         """
         Appends an instruction or a collection of instructions to the current
         block.
         """
-        self.blocks[self.current_block].append(instr)
+        self.blocks[self.current_block].append(instrs)
 
     def next_label(self, hint=None):
         """
@@ -105,8 +105,14 @@ class Env:
         """
         Ends the current block. If continuation exists, appends a jump.
         """
-        if self.next_block:
-            self.append(Instr.goto(self.next_block))
+        match self.next_block:
+            case str():
+                self.append(Instr.goto(self.next_block))
+            case (next_then, next_else):
+                self.append(
+                    Instr.ifne(next_then),
+                    Instr.goto(next_else),
+                )
 
 
 def compile_fun(env, fun, typ) -> Env:
@@ -139,23 +145,23 @@ def compile_fun(env, fun, typ) -> Env:
             env = compile_cmp(env, fun)
         # Handle builtins
         case 'print_int':
-            env.append([
+            env.append(
                 Instr.getstatic('java/lang/System/out', 'Ljava/io/PrintStream;'),
                 Instr.swap(),
                 Instr.invokevirtual('java/io/PrintStream/println(I)V'),
-            ])
+            )
         case 'print_bool':
-            env.append([
+            env.append(
                 Instr.getstatic('java/lang/System/out', 'Ljava/io/PrintStream;'),
                 Instr.swap(),
                 Instr.invokevirtual('java/io/PrintStream/println(I)V'),
-            ])
+            )
         case 'print_string':
-            env.append([
+            env.append(
                 Instr.getstatic('java/lang/System/out', 'Ljava/io/PrintStream;'),
                 Instr.swap(),
                 Instr.invokevirtual('java/io/PrintStream/println(Ljava/lang/String;)V'),
-            ])
+            )
         # Handle user-defined functions
         case _:
             # Assume it's a user-defined function call
@@ -164,6 +170,39 @@ def compile_fun(env, fun, typ) -> Env:
             env.append(Instr.invokestatic(f'{class_name}/{fun}{compile_type(typ)}'))
 
     return env
+
+
+def op_hint(op):
+    return {
+        '==': 'eq',
+        '!=': 'ne',
+        '<': 'lt',
+        '>': 'gt',
+        '<=': 'le',
+        '>=': 'ge',
+    }[op]
+
+
+def zcmp_instr(op):
+    return {
+        '==': Instr.ifeq,
+        '!=': Instr.ifne,
+        '<': Instr.iflt,
+        '>': Instr.ifgt,
+        '<=': Instr.ifle,
+        '>=': Instr.ifge,
+    }[op]
+
+
+def icmp_instr(op):
+    return {
+        '==': Instr.if_icmpeq,
+        '!=': Instr.if_icmpne,
+        '<': Instr.if_icmplt,
+        '>': Instr.if_icmpgt,
+        '<=': Instr.if_icmple,
+        '>=': Instr.if_icmpge,
+    }[op]
 
 
 def compile_cmp(env: Env, op: str) -> Env:
@@ -175,23 +214,6 @@ def compile_cmp(env: Env, op: str) -> Env:
     env.append(Instr.isub())
 
     # Choose the appropriate conditional jump instruction
-    jump_instr = {
-        '==': Instr.ifeq,
-        '!=': Instr.ifne,
-        '<': Instr.iflt,
-        '>': Instr.ifgt,
-        '<=': Instr.ifle,
-        '>=': Instr.ifge,
-    }[op]
-
-    op_hint = {
-        '==': 'eq',
-        '!=': 'ne',
-        '<': 'lt',
-        '>': 'gt',
-        '<=': 'le',
-        '>=': 'ge',
-    }[op]
 
     def compile_then_branch(env):
         env.append(Instr.iconst(1))
@@ -205,8 +227,8 @@ def compile_cmp(env: Env, op: str) -> Env:
         env,
         compile_then=compile_then_branch,
         compile_else=compile_else_branch,
-        decider=jump_instr,
-        hint=op_hint
+        decider=zcmp_instr(op),
+        hint=op_hint(op)
     )
 
     return env
@@ -253,7 +275,6 @@ def compile_cond(env: Env, compile_then, compile_else, decider=Instr.ifne, hint=
     env_else = compile_else(env.in_block(label_else).with_next(label_after))
     env_else.close_block()
 
-    # Since blocks are shared, we just need to return the after environment
     return env.in_block(label_after)
 
 
@@ -364,11 +385,14 @@ def compile_function(env: GlobEnv, fdecl: ast.FunDecl) -> jvm.Method:
 
     for (_arg_t, arg_name) in fdecl.args:
         env = env.bind_var(arg_name)
+
+    # Make sure void functions have a return
+    if fdecl.ret == t.t_void:
+        void_return = env.new_block(hint='void_ret')
+        env.in_block(void_return).append(Instr.return_())
+        env = env.with_next(void_return)
+
     env = compile_block(env, fdecl.body)
-    
-    # Add return instruction for void functions if not already present
-    if fdecl.ret.name == 'void':
-        env.append(Instr.return_())
 
     return jvm.Method(
         visibility='public',

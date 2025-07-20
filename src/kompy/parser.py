@@ -1,4 +1,5 @@
 from pathlib import Path
+import typing
 
 import parsy as P
 
@@ -10,10 +11,11 @@ from .lexer import lex
 # ==============================================================================
 # General
 
-def parse_file(filepath: Path | str) -> ast.Program:
+def parse_file(filepath: Path | str, name: typing.Optional[str] = None) -> ast.Program:
     filepath = Path(filepath)
     content = filepath.read_text(encoding='utf-8')
-    return program(module_name=filepath.stem).parse(content)
+    name = name if name else filepath.stem
+    return program(module_name=name).parse(content)
 
 
 def parens(pars):

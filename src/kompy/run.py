@@ -72,10 +72,10 @@ def eval_j(j_file, jasmin_jar=None):
     return eval_class(classfile)
 
 
-def build(src_file, output=None):
+def build(src_file, output=None, classname=None):
     src_file = pathlib.Path(src_file)
     try:
-        program = p.parse_file(src_file)
+        program = p.parse_file(src_file, name=classname)
     except parsy.ParseError as e:
         print(e)
         sys.exit(1)
@@ -96,7 +96,11 @@ def main():
     a_build = subparsers.add_parser("build")
     a_build.add_argument("src_file", type=pathlib.Path)
     a_build.add_argument("-o", type=pathlib.Path, required=False)
-    a_build.set_defaults(func=lambda args: build(args.src_file, output=args.o))
+    a_build.add_argument("-c", type=str, required=False)
+    a_build.set_defaults(func=lambda args: build(args.src_file,
+                                                 output=args.o,
+                                                 classname=args.c,
+                                                 ))
 
     args = a.parse_args()
     args.func(args)
