@@ -50,10 +50,12 @@ class Env:
     current_method: str
     local: typing.Dict[str, int] = field(factory=dict)
     next_local: int = 0
+    max_locals: int = 0
     current_block: str = jvm.INIT_BLOCK
     next_block: typing.Union[None, str, typing.Tuple[str, str]] = None
     blocks: typing.Dict[str, Block] = field(factory=dict)
     feed: Feed = field(factory=Feed)
+    closed: typing.Set[str] = field(factory=set)
 
     def __attrs_post_init__(self):
         if jvm.INIT_BLOCK not in self.blocks:
@@ -62,7 +64,9 @@ class Env:
     def bind_var(self, name, typ):
         local = self.local.copy()
         local[name] = (self.next_local, typ)
-        return attrs.evolve(self, local=local, next_local=self.next_local+1)
+        new_next_local = self.next_local + 1
+        new_max_locals = max(self.max_locals, new_next_local)
+        return attrs.evolve(self, local=local, next_local=new_next_local, max_locals=new_max_locals)
 
     def get_var(self, name):
         return self.local[name]
@@ -72,6 +76,9 @@ class Env:
         Appends an instruction or a collection of instructions to the current
         block.
         """
+        if self.current_block in self.closed:
+            raise ValueError(f"Appending to a closed block: {self.current_block}")
+
         self.blocks[self.current_block].append(*instrs)
 
     def next_label(self, hint=None, next_feed=True):
@@ -89,12 +96,21 @@ class Env:
         self.blocks[label] = Block()
         return label
 
-    def in_block(self, label):
+    def in_block(self, label: str):
         """
         Switches the block under focus.
         """
+        if not isinstance(label, str):
+            raise TypeError(f"Not a label: {label}")
         env = attrs.evolve(self, current_block=label)
         return env
+
+    def in_new_block(self, label):
+        """
+        Creates a new block and switches to it.
+        """
+        self.new_block(label)
+        return self.in_block(label)
 
     def with_next(self, label):
         """
@@ -106,6 +122,9 @@ class Env:
         """
         Ends the current block. If continuation exists, appends a jump.
         """
+        if self.current_block in self.closed:
+            raise ValueError(f"Closing a closed block: {self.current_block}")
+
         match self.next_block:
             case str():
                 # Jump to the next block
@@ -118,6 +137,7 @@ class Env:
                 )
             case None:
                 pass
+        self.closed.add(self.current_block)
 
 
 def compile_fun(env, fun, typ) -> Env:
@@ -210,13 +230,10 @@ def icmp_instr(op):
     }[op]
 
 
-def compile_cmp(env: Env, op: str) -> Env:
+def compile_cond(env: Env, hint: typing.Optional[str]) -> Env:
     """
-    Compiles a comparison operator. If there is a branch, applies the
-    appropriate conditional jump. Otherwise generates code that leaves 1 (true)
-    or 0 (false) on the stack.
+    Compiles a conditional. Generates necessary blocks and returns the labels.
     """
-
     match env.next_block:
         case (if_then, if_else):
             # Control flow branches depending on the result
@@ -228,7 +245,6 @@ def compile_cmp(env: Env, op: str) -> Env:
         case _:
             # The result is to be pushed onto the stack (as `1` or `0`). We
             # need to generate blocks for those pushes.
-            hint = op_hint(op)
             label_then = env.new_block(hint=f'{hint}_true')
             label_else = env.new_block(hint=f'{hint}_false', next_feed=False)
 
@@ -250,6 +266,17 @@ def compile_cmp(env: Env, op: str) -> Env:
 
             # Continue
             env_after = env.in_block(label_after)
+
+    return label_then, label_else, env_after
+
+
+def compile_cmp(env: Env, op: str) -> Env:
+    """
+    Compiles a comparison operator. If there is a branch, applies the
+    appropriate conditional jump. Otherwise generates code that leaves 1 (true)
+    or 0 (false) on the stack.
+    """
+    label_then, label_else, env_after = compile_cond(env, hint=op_hint(op))
 
     # Apply branching
     env.append(
@@ -288,6 +315,62 @@ def compile_expr(env: Env, expr) -> Env:
                 load = Instr.aload
 
             env.append(load(loc))
+
+        case ast.Call(fun='||', args=[op_l, op_r]):
+            label_op_r = env.new_block(hint='or_long')
+
+            if env.next_block:
+                label_after = env.next_block
+            else:
+                label_after = env.new_block(hint='or_after')
+
+            match env.next_block:
+                case (label_true, _):
+                    label_l_true = label_true
+                case _:
+                    label_l_true = env.new_block(hint='or_short')
+
+                    env_false = env.in_block(label_l_true).with_next(label_after)
+                    env_false.append(Instr.iconst(1))
+                    env_false.close_block()
+
+            env_op_l = env.with_next((label_l_true, label_op_r))
+            env_op_l = compile_expr(env_op_l, op_l)
+
+            env_op_r = env.in_block(label_op_r)
+            env_op_r = env_op_r.with_next(label_after)
+            env_op_r = compile_expr(env_op_r, op_r)
+
+            if isinstance(label_after, str):
+                env = env.in_block(label_after)
+
+        case ast.Call(fun='&&', args=[op_l, op_r]):
+            label_op_r = env.new_block(hint='and_long')
+
+            if env.next_block:
+                label_after = env.next_block
+            else:
+                label_after = env.new_block(hint='and_after')
+
+            match env.next_block:
+                case (_, label_false):
+                    label_l_false = label_false
+                case _:
+                    label_l_false = env.new_block(hint='and_short')
+
+                    env_false = env.in_block(label_l_false).with_next(label_after)
+                    env_false.append(Instr.iconst(0))
+                    env_false.close_block()
+
+            env_op_l = env.with_next((label_op_r, label_l_false))
+            env_op_l = compile_expr(env_op_l, op_l)
+
+            env_op_r = env.in_block(label_op_r)
+            env_op_r = env_op_r.with_next(label_after)
+            env_op_r = compile_expr(env_op_r, op_r)
+
+            if isinstance(label_after, str):
+                env = env.in_block(label_after)
 
         case ast.Call(fun=fun, args=args):
             # Reconstruct the type of the function
@@ -347,9 +430,10 @@ def compile_block(env: Env, block: ast.Block):
                 # after the `if`.
                 if env.next_block:
                     label_after = env.new_block(hint='if_after', next_feed=False)
+                    env_after = env.in_block(label_after)
                 else:
                     label_after = None
-                env_after = env.in_block(label_after)
+                    env_after = env
 
                 # Compile the condition with branching continuation.
                 env = env.with_next((label_then, label_else))
@@ -363,6 +447,10 @@ def compile_block(env: Env, block: ast.Block):
 
                 env_else = env.in_block(label_else).with_next(label_after)
                 env_else = compile_block(env_else, else_block)
+
+                # Merge the max_locals from both branches back into the continuation
+                max_locals_from_branches = max(env_then.max_locals, env_else.max_locals)
+                env_after = attrs.evolve(env_after, max_locals=max(env_after.max_locals, max_locals_from_branches))
 
                 # We move to the continuation.
                 env = env_after
@@ -450,7 +538,7 @@ def compile_function(env: GlobEnv, fdecl: ast.FunDecl) -> jvm.Method:
         args=[compile_type(arg_t) for (arg_t, _) in fdecl.args],
         ret=compile_type(fdecl.ret),
         stack=1000,  # TODO XD
-        local=env.next_local,
+        local=env.max_locals,
         blocks=env.blocks,
     )
 
