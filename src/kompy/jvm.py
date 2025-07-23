@@ -211,7 +211,7 @@ class Instr:
 
     @classmethod
     def goto(cls, label: str) -> "Instr":
-        return cls("goto", [label], branching=label)
+        return cls("goto", [label], branching=label, breaking=True)
 
     # --- Return ---
 
@@ -276,10 +276,22 @@ class Block:
     """
     Block is a sequence of instructions
     """
+    name: str
     instructions: typing.List[Instr] = field(factory=list)
+    closed: bool = False
 
     def append(self, *instrs: Instr):
+        if self.is_closed():
+            raise ValueError(f"Appending to a closed block {self.name}")
+
+        for i in instrs[0:-1]:
+            if i.breaking:
+                raise ValueError(f"Illegal breaking instruction in the middle {self.name}")
+
         self.instructions.extend(instrs)
+
+    def is_closed(self):
+        return self.instructions != [] and self.instructions[-1].breaking
 
     def gen(self):
         lines = []

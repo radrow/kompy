@@ -1,0 +1,19 @@
+# Test: Deep nested control flow with variable shadowing
+# Expected: 4\n3\n4\n25
+void main([string] args) {
+    int x = 25;
+    
+    if x > 20 {
+        int x = 4;
+        print_int(x);
+        
+        if x > 3 {
+            int x = 3;
+            print_int(x);
+        }
+
+        print_int(x);
+    }
+
+    print_int(x);
+}

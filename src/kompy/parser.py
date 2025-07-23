@@ -60,6 +60,16 @@ expr_atom = P.alt(
     parens(expr)
 )
 
+expr_unop = P.seq(
+    fun=L.unop,
+    args=expr_atom.map(lambda e: [e])
+).combine_dict(ast.Call)
+
+expr_simple = P.alt(
+    expr_atom,
+    expr_unop,
+)
+
 
 def prec(o):
     if o in ["||", "&&"]:
@@ -86,7 +96,7 @@ def op_bind(o):
 @P.generate
 def expr_op():
     # We first parse everything flat
-    expr_seq = yield (P.seq(expr_atom, L.op)).at_least(1)
+    expr_seq = yield (P.seq(expr_simple, L.op)).at_least(1)
     last = yield expr
 
     # Convert to postfix notation. Strings represent operators.
@@ -127,16 +137,9 @@ def expr_op():
     return stack[0]
 
 
-expr_unop = P.seq(
-    fun=L.unop,
-    args=expr.map(lambda e: [e])
-).combine_dict(ast.Call)
-
-
 expr.become(P.alt(
-    expr_unop,
     expr_op,
-    expr_atom,
+    expr_simple,
 ).desc("expression"))
 
 

@@ -1,0 +1,131 @@
+# Test: Comprehensive test combining multiple advanced language features
+# Expected: 1\nhello\n15\n25\n120\n0
+
+int factorial_iterative(int n) {
+    int result = 1;
+    int i = 1;
+    
+    # Nested loop simulation with recursion
+    if n > 0 {
+        if i <= n {
+            result = result * i;
+            if i < n {
+                # Recursive call to continue the "loop"
+                int remaining = factorial_iterative_helper(result * (i + 1), i + 2, n);
+                return remaining;
+            }
+        }
+    }
+    return result;
+}
+
+int factorial_iterative_helper(int current_result, int current_i, int n) {
+    if current_i <= n {
+        return factorial_iterative_helper(current_result * current_i, current_i + 1, n);
+    } else {
+        return current_result;
+    }
+}
+
+int max_of_three(int a, int b, int c) {
+    if a > b {
+        if a > c {
+            return a;
+        } else {
+            return c;
+        }
+    } else {
+        if b > c {
+            return b;
+        } else {
+            return c;
+        }
+    }
+}
+
+bool is_prime_helper(int n, int divisor) {
+    if divisor * divisor > n {
+        return true;
+    } else {
+        if (n % divisor) == 0 {
+            return false;
+        } else {
+            return is_prime_helper(n, divisor + 1);
+        }
+    }
+}
+
+bool is_prime(int n) {
+    if n < 2 {
+        return false;
+    } else {
+        return is_prime_helper(n, 2);
+    }
+}
+
+string number_to_category(int n) {
+    if n < 0 {
+        return "negative";
+    } else {
+        if n == 0 {
+            return "zero";
+        } else {
+            if n <= 10 {
+                return "small";
+            } else {
+                if n <= 100 {
+                    return "medium";
+                } else {
+                    return "large";
+                }
+            }
+        }
+    }
+}
+
+void main([string] args) {
+    # Test deep variable shadowing with different types
+    int x = 10;
+    bool flag = true;
+    
+    if flag {
+        bool x = true;  # Shadow int with bool
+        print_bool(x);
+        
+        if x {
+            string x = "hello";  # Shadow bool with string
+            print_string(x);
+            
+            if x == "hello" {
+                int x = 15;  # Shadow string with int again
+                print_int(x);
+                
+                # Complex nested function calls with shadowed variables
+                int y = 20;
+                if x < y {
+                    int max_val = max_of_three(x, y, 25);
+                    print_int(max_val);  # Should print 25
+                }
+            }
+        }
+    }
+    
+    # Test complex recursive function calls
+    int fact_result = factorial_iterative(5);
+    print_int(fact_result);  # Should print 120
+    
+    # Test prime checking with multiple nested calls and conditions
+    int test_num = 15;
+    bool prime_check = is_prime(test_num);
+    string category = number_to_category(test_num);
+    
+    if !prime_check && category == "small" {
+        # This should execute since 15 is not prime and is "small" (false, but 15 > 10, so it's actually "medium")
+        # Wait, 15 > 10, so it should be "medium", this condition should fail
+        print_int(999);  # Should not execute
+    } else {
+        if category == "medium" {
+            print_int(0);  # Should execute and print 0
+        }
+    }
+}
