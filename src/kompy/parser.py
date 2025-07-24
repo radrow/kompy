@@ -198,12 +198,19 @@ stmt_if = P.seq(
     else_block=(L.kw('else') >> block).optional(),
 ).combine_dict(ast.If)
 
+stmt_while = P.seq(
+    _if=L.kw('while'),
+    cond=expr,
+    body=block,
+).combine_dict(ast.While)
+
 stmt.become(P.alt(
     stmt_var_decl,
     stmt_assg,
     stmt_return,
     stmt_expr,
     stmt_if,
+    stmt_while,
 ).desc("statement"))
 
 block.become(bracs(

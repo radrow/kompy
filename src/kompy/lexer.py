@@ -6,6 +6,7 @@ keywords = [
     'return',
     'true',
     'false',
+    'while'
 ]
 
 whitespaces = P.regex(r'\s+', P.re.MULTILINE).desc("whitespace")

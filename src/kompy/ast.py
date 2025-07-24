@@ -163,6 +163,15 @@ class If(Stmt):
     else_block: typing.Optional[Block] = None
 
 
+@frozen(auto_attribs=True, kw_only=True)
+class While(Stmt):
+    """
+    While loop
+    """
+    cond: Expr
+    body: Block
+
+
 # ==============================================================================
 # Top-level declarations
 
