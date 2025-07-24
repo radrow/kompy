@@ -10,6 +10,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import traceback
 from typing import Optional, Union
 
 import parsy
@@ -190,7 +191,7 @@ class KompyCompiler:
         except parsy.ParseError as e:
             raise CompilationError(f"Parse error: {e}")
         except Exception as e:
-            raise CompilationError(f"Compilation failed: {e}")
+            raise CompilationError(f"Compilation failed: {e}" + ''.join(traceback.format_exception(type(e), e, e.__traceback__)))
 
     def compile_and_assemble(self, src_file: Union[str, pathlib.Path],
                            class_name: Optional[str] = None) -> pathlib.Path:

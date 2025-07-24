@@ -60,9 +60,9 @@ class CompilerEnv:
         """Emit instructions to current block"""
         self.blocks[self.current_block].append(*instrs)
 
-    def new_label(self, hint=""):
+    def new_label(self, hint="", keep=False):
         """Generate a new unique label"""
-        self.label_counter += 1
+        self.label_counter += 1 if not keep else 0
         return f"{hint}_{self.label_counter}" if hint else f"L_{self.label_counter}"
 
     def new_block(self, label):
@@ -73,6 +73,16 @@ class CompilerEnv:
     def switch_block(self, label):
         """Switch to emitting into a different block"""
         self.current_block = label
+
+    def switch_new_block(self, label):
+        """Switch to emitting into a new block"""
+        self.new_block(label)
+        self.switch_block(label)
+
+    def closed(self, label=None):
+        if not label:
+            label = self.current_block
+        return self.blocks[label].is_closed()
 
 
 def compile_expr(env, expr):
@@ -144,13 +154,15 @@ def compile_expr(env, expr):
                     # User-defined function
                     typ = ast.TypeFun(args=[arg.type for arg in args], ret=expr.type)
                     env.emit(jvm.Instr.invokestatic(f'{env.class_name}/{fun}{compile_type(typ)}'))
+        case _:
+            raise ValueError(f"Unhandled expr {expr}")
 
 
 def compile_comparison(env, op, left_type=None, right_type=None):
     """Compile comparison operators"""
     # Generate unique labels
     true_label = env.new_label("cmp_true")
-    end_label = env.new_label("cmp_end")
+    label_end = env.new_label("cmp_end")
 
     # Handle string comparisons differently
     if left_type == t.t_string or right_type == t.t_string:
@@ -180,16 +192,14 @@ def compile_comparison(env, op, left_type=None, right_type=None):
         env.emit(cmp_instr(true_label))
 
     # False case: push 0 and jump to end
-    env.emit(jvm.Instr.iconst(0), jvm.Instr.goto(end_label))
+    env.emit(jvm.Instr.iconst(0), jvm.Instr.goto(label_end))
 
     # True case: create block and push 1
-    env.new_block(true_label)
-    env.switch_block(true_label)
-    env.emit(jvm.Instr.iconst(1), jvm.Instr.goto(end_label))
+    env.switch_new_block(true_label)
+    env.emit(jvm.Instr.iconst(1), jvm.Instr.goto(label_end))
 
     # End: create block for continuation
-    env.new_block(end_label)
-    env.switch_block(end_label)
+    env.switch_new_block(label_end)
 
 
 def compile_stmt(env, stmt):
@@ -232,12 +242,15 @@ def compile_stmt(env, stmt):
         case ast.If(cond=cond, then_block=then_block, else_block=else_block):
             compile_if(env, cond, then_block, else_block)
 
+        case ast.While(cond=cond, body=body):
+            compile_while(env, cond, body)
 
-def compile_if(env, cond, then_block, else_block):
-    """Compile if statement"""
-    # Generate unique labels
-    then_label = env.new_label("if_then")
-    end_label = env.new_label("if_end")
+        case _:
+            raise ValueError(f"Unhandled stmt {stmt}")
+
+
+def compile_cond(env, cond, label_then):
+    """Compile a branching flow"""
 
     # Handle condition - check if it's a comparison that we can optimize
     if isinstance(cond, ast.Call) and cond.fun in ['==', '!=', '<', '>', '<=', '>=']:
@@ -253,10 +266,10 @@ def compile_if(env, cond, then_block, else_block):
             # Handle string comparisons
             if cond.fun == '==':
                 env.emit(jvm.Instr.invokevirtual('java/lang/String/equals(Ljava/lang/Object;)Z'))
-                env.emit(jvm.Instr.ifne(then_label))
+                env.emit(jvm.Instr.ifne(label_then))
             elif cond.fun == '!=':
                 env.emit(jvm.Instr.invokevirtual('java/lang/String/equals(Ljava/lang/Object;)Z'))
-                env.emit(jvm.Instr.ifeq(then_label))
+                env.emit(jvm.Instr.ifeq(label_then))
             else:
                 raise ValueError(f"String comparison '{cond.fun}' not supported")
         else:
@@ -270,35 +283,45 @@ def compile_if(env, cond, then_block, else_block):
                 '>=': jvm.Instr.if_icmpge,
             }[cond.fun]
 
-            env.emit(cmp_instr(then_label))
+            env.emit(cmp_instr(label_then))
     else:
         # General condition - compile and test for non-zero
         compile_expr(env, cond)
-        env.emit(jvm.Instr.ifne(then_label))
+        env.emit(jvm.Instr.ifne(label_then))
+
+
+def compile_if(env, cond, then_block, else_block):
+    """Compile if statement"""
+    # Generate unique labels
+    label_then = env.new_label("if_then")
+    label_end = env.new_label("if_end", keep=True)
+
+    # Compile the conditional jump
+    compile_cond(env, cond, label_then)
 
     # Else block (if exists) or fall through
     if else_block:
         compile_block(env, else_block)
 
+    needs_end = False
+
     # Only add goto to end if the current block isn't closed
-    else_needs_end = not env.blocks[env.current_block].is_closed()
-    if else_needs_end:
-        env.emit(jvm.Instr.goto(end_label))
+    if env.closed():
+        needs_end = True
+        env.emit(jvm.Instr.goto(label_end))
 
     # Then block
-    env.new_block(then_label)
-    env.switch_block(then_label)
+    env.switch_new_block(label_then)
     compile_block(env, then_block)
 
     # Only add goto to end if the then block isn't closed
-    then_needs_end = not env.blocks[env.current_block].is_closed()
-    if then_needs_end:
-        env.emit(jvm.Instr.goto(end_label))
+    if not env.closed():
+        needs_end = True
+        env.emit(jvm.Instr.goto(label_end))
 
     # Only create and switch to end block if at least one branch needs it
-    if else_needs_end or then_needs_end:
-        env.new_block(end_label)
-        env.switch_block(end_label)
+    if needs_end:
+        env.switch_new_block(label_end)
 
 
 def compile_block(env, block):
@@ -306,6 +329,7 @@ def compile_block(env, block):
     # Push a new scope for this block
     env.push_scope()
 
+    # Compile all statements
     for stmt in block.stmts:
         compile_stmt(env, stmt)
 
