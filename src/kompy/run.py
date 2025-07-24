@@ -318,5 +318,11 @@ def assemble(j_file: Union[str, pathlib.Path]) -> Optional[str]:
         return None
 
 
+def ensure_jasmin() -> str:
+    """Ensure Jasmin assembler is available and return the path to the JAR."""
+    project_manager = ProjectManager()
+    return str(project_manager.jasmin_jar)
+
+
 if __name__ == "__main__":
     main()

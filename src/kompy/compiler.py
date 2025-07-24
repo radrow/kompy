@@ -35,11 +35,10 @@ class CompilerEnv:
         self.current_block = jvm.INIT_BLOCK
         self.blocks = {jvm.INIT_BLOCK: jvm.Block(name=jvm.INIT_BLOCK)}
         self.label_counter = 0
+        self.scope_stack = []
 
     def push_scope(self):
         """Push a new variable scope (save current locals)"""
-        if not hasattr(self, 'scope_stack'):
-            self.scope_stack = []
         self.scope_stack.append(dict(self.locals))
 
     def pop_scope(self):

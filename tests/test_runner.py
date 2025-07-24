@@ -123,7 +123,7 @@ class TestRunner:
                     old_cwd = os.getcwd()
                     os.chdir(test_file.parent)
                     try:
-                        classfile = run.assemble(str(j_file.name), self.jasmin_jar)
+                        classfile = run.assemble(str(j_file.name))
                     finally:
                         os.chdir(old_cwd)
 
