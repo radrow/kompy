@@ -83,14 +83,6 @@ class TypeVar(Type):
 
 
 @frozen(auto_attribs=True, kw_only=True)
-class TypeArr(Type):
-    """
-    Array type
-    """
-    el: Type
-
-
-@frozen(auto_attribs=True, kw_only=True)
 class TypeFun(Type):
     """
     Functional type. Not available in the syntax (thus technically

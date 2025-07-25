@@ -7,6 +7,6 @@ int func() {  # Function redefinition
     return 2;
 }
 
-void main([string] args) {
+void main() {
     return func();
 }

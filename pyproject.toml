@@ -1,5 +1,5 @@
 [project]
-name = "kompy"
+name = "wuwiak"
 version = "0.1.0"
 description = ""
 authors = []
@@ -18,4 +18,4 @@ testpaths = ["tests"]
 
 
 [project.scripts]
-kompyc = "kompy.run:main"
+wuwiakc = "wuwiak.__main__:main"

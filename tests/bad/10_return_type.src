@@ -1,4 +1,4 @@
 # Test: Return type mismatch
-void main([string] args) {
+void main() {
     return true;  # Return type mismatch: int function returns bool
 }

@@ -1,5 +1,5 @@
 # Test: Negative numbers
-void main([string] args) {
+void main() {
     int x = -42;
     print_int(x);
 }

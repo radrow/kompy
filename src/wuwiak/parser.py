@@ -3,6 +3,7 @@ import typing
 
 import parsy as P
 
+from . import error
 from . import ast
 from . import lexer as L
 from .lexer import lex
@@ -11,11 +12,19 @@ from .lexer import lex
 # ==============================================================================
 # General
 
+class ParseError(error.WuwiakError):
+    def __init__(self, pe):
+        self.parsy_error = pe
+
+
 def parse_file(filepath: Path | str, name: typing.Optional[str] = None) -> ast.Program:
     filepath = Path(filepath)
     content = filepath.read_text(encoding='utf-8')
     name = name if name else filepath.stem
-    return program(module_name=name).parse(content)
+    try:
+        return program(module_name=name).parse(content)
+    except P.ParseError as e:
+        raise ParseError from e
 
 
 def parens(pars):
@@ -150,11 +159,8 @@ typ = P.forward_declaration()
 
 type_var = L.ident.map(lambda v: ast.TypeVar(name=v))
 
-type_arr = (L.lsbrac >> typ << L.rsbrac).map(lambda t: ast.TypeArr(el=t))
-
 typ.become(
     P.alt(
-        type_arr,
         type_var,
     ).desc("type")
 )

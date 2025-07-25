@@ -1,5 +1,5 @@
 # Test: String with escape sequences
 # Expected: Hello\nWorld\t!
-void main([string] args) {
+void main() {
     print_string("Hello\nWorld\t!");
 }

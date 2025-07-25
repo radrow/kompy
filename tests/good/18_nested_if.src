@@ -1,6 +1,6 @@
 # Test: Nested if statements
 # Expected: 2
-void main([string] args) {
+void main() {
     int x = 15;
     int result;
     if x > 10 {

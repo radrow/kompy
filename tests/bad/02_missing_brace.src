@@ -1,4 +1,4 @@
 # Test: Missing parentheses
-void main([string] args) {
+void main() {
     return 42;
 # Missing closing brace

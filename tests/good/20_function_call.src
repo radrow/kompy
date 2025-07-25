@@ -3,6 +3,6 @@ int helper() {
     return 42;
 }
 
-void main([string] args) {
+void main() {
     print_int(helper());
 }

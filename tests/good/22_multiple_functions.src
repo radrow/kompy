@@ -7,6 +7,6 @@ int square(int x) {
     return multiply(x, x);
 }
 
-void main([string] args) {
+void main() {
     print_int(square(5));
 }

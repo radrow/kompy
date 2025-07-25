@@ -1,6 +1,6 @@
 # Test: Complex nested if statements with multiple conditions and variable shadowing
 # Expected: 4\n3\n2
-void main([string] args) {
+void main() {
     int x = 25;
     int y = 10;
     bool flag = true;

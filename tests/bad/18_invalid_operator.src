@@ -1,4 +1,4 @@
 # Test: Invalid operator
-void main([string] args) {
+void main() {
     return 5 ** 2;  # Invalid operator
 }

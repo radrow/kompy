@@ -4,16 +4,14 @@ Decorating AST with type annotations
 import attrs
 
 from . import ast
-
+from . import error
 
 @attrs.frozen(auto_attribs=True, kw_only=False)
-class TypecheckError(Exception):
+class TypecheckError(error.WuwiakError):
     """
     Exception class for user errors
     """
     msg: str
-
-# TODO error classes
 
 
 def typed(node, typ):
@@ -32,10 +30,6 @@ t_string = ast.TypeVar(name='string')
 t_void = ast.TypeVar(name='void')
 
 RETURN_VAR = '$RETURN'
-
-
-def t_arr(el):
-    return ast.TypeArr(el=el)
 
 
 def t_fun(args, ret):
@@ -245,7 +239,7 @@ def tc_program(env, program):
             case _:
                 pass
 
-    if 'main' in env and env['main'] != ast.TypeFun(args=[t_arr(t_string)], ret=t_void):
+    if 'main' in env and env['main'] != ast.TypeFun(args=[], ret=t_void):
         raise TypecheckError(f"Invalid type of 'main': {env['main']}")
 
     # Typecheck all declarations in the updated env

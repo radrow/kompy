@@ -1,5 +1,5 @@
 # Test: Logical operators
 # Expected: 1
-void main([string] args) {
+void main() {
     print_bool(true || false && true);
 }

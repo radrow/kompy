@@ -1,5 +1,5 @@
 # Test: String variables
-void main([string] args) {
+void main() {
     string msg = "Hello";
     print_string(msg);
 }

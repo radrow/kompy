@@ -1,6 +1,6 @@
 # Test: Variable assignment
 # Expected: 25
-void main([string] args) {
+void main() {
     int x = 10;
     x = 20;
     x = x + 5;

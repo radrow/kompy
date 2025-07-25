@@ -1,6 +1,6 @@
 # Test: Variable shadowing with different types and complex control flow
 # Expected: 1\nhello\n5\nworld\n42
-void main([string] args) {
+void main() {
     int value = 100;
     bool condition = true;
     

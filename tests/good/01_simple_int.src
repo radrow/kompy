@@ -1,5 +1,5 @@
 # Test: Simple integer return
 # Expected: 42
-void main([string] args) {
+void main() {
     print_int(42);
 }

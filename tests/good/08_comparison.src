@@ -1,5 +1,5 @@
 # Test: Comparison operators
 # Expected: 1
-void main([string] args) {
+void main() {
     print_bool(5 > 3 && 10 <= 20);
 }

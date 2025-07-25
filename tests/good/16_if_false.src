@@ -1,6 +1,6 @@
 # Test: If statement with false condition
 # Expected: 42
-void main([string] args) {
+void main() {
     int result = 42;
     if false {
         result = 0;

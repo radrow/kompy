@@ -1,5 +1,5 @@
 # Test: Equality operators
 # Expected: 1
-void main([string] args) {
+void main() {
     print_bool(5 == 5 && 3 != 4);
 }

@@ -83,7 +83,7 @@ string number_to_category(int n) {
     }
 }
 
-void main([string] args) {
+void main() {
     # Test deep variable shadowing with different types
     int x = 10;
     bool flag = true;

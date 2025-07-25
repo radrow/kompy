@@ -1,5 +1,5 @@
 # Test: Missing condition in if statement
-void main([string] args) {
+void main() {
     if {  # Missing condition
         return 1;
     }

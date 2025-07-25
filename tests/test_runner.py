@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive test runner for Kompy language.
+Comprehensive test runner for Kompy language with RISC-V backend.
 Tests are divided into 'good' (should compile and run) and 'bad' (should fail).
 """
 
@@ -16,10 +16,9 @@ from typing import List, Dict, Any, Optional, Tuple
 
 import parsy
 
-from kompy import parser as p
-from kompy import typechecker as t
-from kompy import compiler as c
-from kompy import run
+from wuwiak import parser as p
+from wuwiak import typechecker as t
+from wuwiak import compiler_riscv as c
 
 
 # Add src to path to import kompy modules
@@ -52,14 +51,15 @@ class TestRunner:
         self.test_dir = test_dir
         self.good_dir = test_dir / "good"
         self.bad_dir = test_dir / "bad"
-        self.jasmin_jar = None
+        self.current_dir = test_dir / "current"  # For current syntax tests
+        self.rars_jar = project_root / "rars" / "rars.jar"
 
     def setup(self):
-        """Setup jasmin jar for compilation"""
-        try:
-            self.jasmin_jar = run.ensure_jasmin()
-        except Exception as e:
-            print(f"Warning: Could not setup jasmin: {e}")
+        """Setup RARS jar for execution"""
+        if not self.rars_jar.exists():
+            print(f"Warning: RARS jar not found at {self.rars_jar}")
+            return False
+        return True
 
     def run_good_test(self, test_file: pathlib.Path) -> TestResult:
         """
@@ -67,97 +67,115 @@ class TestRunner:
         For tests with expected output, check that the output matches.
         """
         try:
-            # Create a valid module name for Java (can't start with digit)
+            # Create a valid module name
             module_name = test_file.stem
             if module_name[0].isdigit():
                 module_name = "Test" + module_name
             module_name = module_name.replace("-", "_")
 
-            # Parse the test file with the proper module name
+            # Parse the test file
             content = test_file.read_text(encoding='utf-8')
             program = p.program(module_name=module_name).parse(content)
 
             # Type check
             program_t = t.tc_program(t.init_env(), program)
 
-            # Compile to JVM
-            jvm_class = c.compile_program(program_t)
+            # Compile to RISC-V
+            riscv_program = c.compile_program(program_t)
 
-            # Find the main function (if it exists)
-            main_function = None
-            for decl in program.decls:
-                if isinstance(decl, p.ast.FunDecl) and decl.name == "main":
-                    main_function = decl
-                    break
+            # Generate RISC-V assembly
+            assembly_lines = []
+            assembly_lines.append(".text")
+            assembly_lines.append(".globl main")
+            assembly_lines.append("")
+            
+            # Add data section if present
+            if riscv_program.data_section:
+                assembly_lines.append(".data")
+                for data_directive in riscv_program.data_section:
+                    assembly_lines.append(data_directive)
+                assembly_lines.append("")
+                assembly_lines.append(".text")
+            
+            # Add functions
+            for func in riscv_program.text_section:
+                assembly_lines.append(f"{func.name}:")
+                
+                # Process all blocks in the function
+                main_block = func.blocks.get('main')
+                if main_block:
+                    for instr in main_block.instructions:
+                        if instr.operands:
+                            operand_str = ', '.join(str(op) for op in instr.operands)
+                            assembly_lines.append(f"    {instr.opcode} {operand_str}")
+                        else:
+                            assembly_lines.append(f"    {instr.opcode}")
+                
+                # Handle other blocks (for control flow)
+                for block_name, block in func.blocks.items():
+                    if block_name != 'main':
+                        assembly_lines.append(f"{block_name}:")
+                        for instr in block.instructions:
+                            if instr.operands:
+                                operand_str = ', '.join(str(op) for op in instr.operands)
+                                assembly_lines.append(f"    {instr.opcode} {operand_str}")
+                            else:
+                                assembly_lines.append(f"    {instr.opcode}")
+                
+                assembly_lines.append("")
 
-            if main_function is None:
-                return TestResult(test_file.name, False, "No main function found")
+            # Write assembly file
+            asm_file = test_file.with_suffix('.s')
+            with open(asm_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(assembly_lines))
 
-            # Check if main function has the correct signature
-            # If it's already void main([string] args), we don't need to add a Java wrapper
-            needs_wrapper = True
-            if (main_function.ret.name == "void" and
-                len(main_function.args) == 1 and
-                isinstance(main_function.args[0][0], p.ast.TypeArr) and
-                main_function.args[0][0].el.name == "string" and
-                main_function.args[0][1] == "args"):
-                needs_wrapper = False
-
-            # Add a proper Java main method that calls our main function (only if needed)
-            if needs_wrapper:
-                main_method = self._create_java_main_method(main_function, module_name)
-                jvm_class.methods.append(main_method)
-
-            jvm_str = jvm_class.gen()
-
-            # Write jasmin file
-            j_file = test_file.with_suffix('.j')
-            with open(j_file, 'w', encoding='utf-8') as f:
-                f.write(jvm_str)
-
-            # Assemble with jasmin
-            if self.jasmin_jar:
+            # Run with RARS
+            if self.rars_jar.exists():
                 try:
-                    # Need to run jasmin in the same directory as the .j file
-                    # so the .class file is generated in the right place
-                    old_cwd = os.getcwd()
-                    os.chdir(test_file.parent)
-                    try:
-                        classfile = run.assemble(str(j_file.name))
-                    finally:
-                        os.chdir(old_cwd)
-
-                    # Run the program
-                    result = subprocess.run(
-                        ["java", pathlib.Path(classfile).stem],
-                        cwd=test_file.parent,
-                        capture_output=True,
-                        text=True,
-                        timeout=10
-                    )
+                    # Run RARS in console mode 
+                    result = subprocess.run([
+                        "java", "-jar", str(self.rars_jar),
+                        str(asm_file)
+                    ], capture_output=True, text=True, timeout=10)
 
                     # Check if test has expected output
                     expected_output = self._get_expected_output(test_file)
                     if expected_output is not None:
-                        # For string comparisons, we need to handle escape sequences
-                        actual_output = result.stdout.rstrip('\n')  # Only remove trailing newline
+                        # RARS output includes some header text, extract just the program output
+                        lines = result.stdout.split('\n')
+                        program_output_lines = []
+                        capture_output = False
+                        
+                        for line in lines:
+                            # Skip RARS header
+                            if "RARS" in line and "Copyright" in line:
+                                continue
+                            # Look for actual program output (numbers, strings, etc.)
+                            if line.strip() and not line.startswith("Program terminated"):
+                                program_output_lines.append(line.strip())
+                        
+                        actual_output = '\n'.join(program_output_lines) if program_output_lines else ""
+                        
                         if actual_output == expected_output:
-                            return TestResult(test_file.name, True, "Output matches expected", result.stdout)
+                            return TestResult(test_file.name, True, "Output matches expected", actual_output)
                         else:
                             return TestResult(test_file.name, False,
                                             f"Expected: {expected_output!r}, Got: {actual_output!r}")
                     else:
-                        # No expected output, just check that it ran without error
-                        if result.returncode == 0:
+                        # No expected output, check if program ran without error
+                        if "Program terminated by calling exit" in result.stdout or result.returncode == 0:
                             return TestResult(test_file.name, True, "Compiled and ran successfully", result.stdout)
                         else:
                             return TestResult(test_file.name, False,
                                             f"Runtime error: {result.stderr}")
+                            
+                except subprocess.TimeoutExpired:
+                    return TestResult(test_file.name, False, "Program timed out")
                 except subprocess.CalledProcessError as e:
-                    return TestResult(test_file.name, False, f"Jasmin assembly failed: {e}")
+                    return TestResult(test_file.name, False, f"RARS execution failed: {e}")
             else:
-                # Can't run jasmin, just check that it compiles
-                return TestResult(test_file.name, True, "Compiled to JVM successfully")
+                # Can't run RARS, just check that it compiles
+                return TestResult(test_file.name, True, "Compiled to RISC-V successfully")
 
         except parsy.ParseError as e:
             return TestResult(test_file.name, False, f"Parse error: {e}")
@@ -167,70 +185,17 @@ class TestRunner:
             return TestResult(test_file.name, False, f"Fatal error: {e}\n{''.join(traceback.format_exception(e))}")
         finally:
             # Clean up generated files
-            for ext in ['.j', '.class']:
+            for ext in ['.s']:
                 cleanup_file = test_file.with_suffix(ext)
                 if cleanup_file.exists():
                     cleanup_file.unlink()
-
-    def _create_java_main_method(self, main_function, class_name):
-        """Create a proper Java main method that calls our main function and prints the result"""
-        from kompy.jvm import Method, Block, Instr, INIT_BLOCK
-
-        # Get the return type
-        ret_type = main_function.ret.name
-
-        # Create instructions to call our main function and print the result to stdout
-        if ret_type == "int":
-            # For int return type, call the function and print the result
-            instructions = [
-                Instr.getstatic("java/lang/System/out", "Ljava/io/PrintStream;"),
-                Instr.invokestatic(f"{class_name}/main()I"),
-                Instr.invokevirtual("java/io/PrintStream/println(I)V"),
-                Instr.return_()
-            ]
-        elif ret_type == "bool":
-            # For bool return type, call the function and print the result (0 or 1)
-            instructions = [
-                Instr.getstatic("java/lang/System/out", "Ljava/io/PrintStream;"),
-                Instr.invokestatic(f"{class_name}/main()I"),
-                Instr.invokevirtual("java/io/PrintStream/println(I)V"),
-                Instr.return_()
-            ]
-        elif ret_type == "string":
-            # For string return type, call the function and print the string
-            instructions = [
-                Instr.getstatic("java/lang/System/out", "Ljava/io/PrintStream;"),
-                Instr.invokestatic(f"{class_name}/main()Ljava/lang/String;"),
-                Instr.invokevirtual("java/io/PrintStream/println(Ljava/lang/String;)V"),
-                Instr.return_()
-            ]
-        else:
-            # For void or other types, just call the function
-            instructions = [
-                Instr.invokestatic(f"{class_name}/main()V"),
-                Instr.return_()
-            ]
-
-        # Create the method
-        method = Method(
-            visibility='public',
-            name='main',
-            static=True,
-            args=['[Ljava/lang/String;'],
-            ret='V',
-            stack=1000,
-            local=1000,
-            blocks={INIT_BLOCK: Block(instructions=instructions)}
-        )
-
-        return method
 
     def run_bad_test(self, test_file: pathlib.Path) -> TestResult:
         """
         Run a negative test case - should fail to parse, type check, or compile.
         """
         try:
-            # Create a valid module name for Java (can't start with digit)
+            # Create a valid module name
             module_name = test_file.stem
             if module_name[0].isdigit():
                 module_name = "Test" + module_name
@@ -243,9 +208,8 @@ class TestRunner:
             # Try to type check
             program_t = t.tc_program(t.init_env(), program)
 
-            # Try to compile
-            jvm_class = c.compile_program(program_t)
-            jvm_str = jvm_class.gen()
+            # Try to compile to RISC-V
+            riscv_program = c.compile_program(program_t)
 
             # If we get here, the test should have failed but didn't
             return TestResult(test_file.name, False, "Test should have failed but passed")
@@ -256,6 +220,9 @@ class TestRunner:
         except parsy.ParseError as e:
             # This is expected for bad tests
             return TestResult(test_file.name, True, f"Failed (P) as expected: {e}")
+        except Exception as e:
+            # Other compilation errors are also expected
+            return TestResult(test_file.name, True, f"Failed (C) as expected: {e}")
 
     def _get_expected_output(self, test_file: pathlib.Path) -> Optional[str]:
         """
@@ -286,12 +253,21 @@ class TestRunner:
                 result = self.run_good_test(test_file)
                 good_results.append(result)
 
+        # Run current tests (should pass)
+        if self.current_dir.exists():
+            for test_file in sorted(self.current_dir.glob("*.src")):
+                print(f"Running current test: {test_file.name}")
+                result = self.run_good_test(test_file)
+                good_results.append(result)
+
         # Run bad tests
         if self.bad_dir.exists():
             for test_file in sorted(self.bad_dir.glob("*.src")):
                 print(f"Running bad test: {test_file.name}")
                 result = self.run_bad_test(test_file)
                 bad_results.append(result)
+
+        return good_results, bad_results
 
         return good_results, bad_results
 

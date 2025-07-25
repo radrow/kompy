@@ -1,5 +1,5 @@
 # Test: String return
 # Expected: Hello World
-void main([string] args) {
+void main() {
     print_string("Hello World");
 }

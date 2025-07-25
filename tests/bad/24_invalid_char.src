@@ -1,4 +1,4 @@
 # Test: Invalid character in source
-void main([string] args) {
+void main() {
     return 42@;  # Invalid character
 }

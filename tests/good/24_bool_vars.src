@@ -1,5 +1,5 @@
 # Test: Boolean variables
-void main([string] args) {
+void main() {
     bool x = true;
     bool y = false;
     print_bool(x && !y);

@@ -1,5 +1,5 @@
 # Test: Type mismatch in assignment
-void main([string] args) {
+void main() {
     int x = true;  # Type mismatch: int = bool
     return x;
 }

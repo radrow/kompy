@@ -1,6 +1,6 @@
 # Test: Variable declaration without initialization
 # Expected: 42
-void main([string] args) {
+void main() {
     int x;
     x = 42;
     print_int(x);

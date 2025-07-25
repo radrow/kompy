@@ -1,5 +1,5 @@
 # Test: Mixed types in conditions
-void main([string] args) {
+void main() {
     int x = 10;
     bool flag = true;
     if flag && x > 5 {

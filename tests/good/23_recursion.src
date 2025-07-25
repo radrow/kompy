@@ -7,6 +7,6 @@ int factorial(int n) {
     }
 }
 
-void main([string] args) {
+void main() {
     print_int(factorial(5));
 }

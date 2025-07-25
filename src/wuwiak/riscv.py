@@ -241,28 +241,38 @@ class Instr:
     def bgeu(cls, rs1: str, rs2: str, label: str) -> "Instr":
         """Branch if greater or equal unsigned"""
         return cls("bgeu", [rs1, rs2, label], branching=label)
-    
+
     # --- Pseudo-instructions for branches ---
-    
+
     @classmethod
     def bgt(cls, rs1: str, rs2: str, label: str) -> "Instr":
         """Branch if greater than (pseudo-instruction for blt rs2, rs1, label)"""
         return cls("bgt", [rs1, rs2, label], branching=label)
-    
+
     @classmethod
     def ble(cls, rs1: str, rs2: str, label: str) -> "Instr":
         """Branch if less than or equal (pseudo-instruction for bge rs2, rs1, label)"""
         return cls("ble", [rs1, rs2, label], branching=label)
-    
+
     @classmethod
     def bgtu(cls, rs1: str, rs2: str, label: str) -> "Instr":
         """Branch if greater than unsigned (pseudo-instruction for bltu rs2, rs1, label)"""
         return cls("bgtu", [rs1, rs2, label], branching=label)
-    
+
     @classmethod
     def bleu(cls, rs1: str, rs2: str, label: str) -> "Instr":
         """Branch if less than or equal unsigned (pseudo-instruction for bgeu rs2, rs1, label)"""
         return cls("bleu", [rs1, rs2, label], branching=label)
+
+    @classmethod
+    def beqz(cls, rs1: str, label: str) -> "Instr":
+        """Branch if equal to zero (pseudo-instruction for beq rs1, x0, label)"""
+        return cls("beqz", [rs1, label], branching=label)
+
+    @classmethod
+    def bnez(cls, rs1: str, label: str) -> "Instr":
+        """Branch if not equal to zero (pseudo-instruction for bne rs1, x0, label)"""
+        return cls("bnez", [rs1, label], branching=label)
 
     # --- Jump operations ---
 
@@ -419,12 +429,22 @@ class Instr:
         """Set if less than zero (pseudo-instruction for slt rd, rs1, x0)"""
         return cls("sltz", [rd, rs1])
 
+    @classmethod
+    def label(cls, name: str) -> "Instr":
+        """Create a label (not an instruction, but a marker)"""
+        return cls("", [f"{name}:"])
+
     # --- System calls ---
 
     @classmethod
     def ecall(cls) -> "Instr":
         """Environment call (system call)"""
         return cls("ecall", [])
+
+    @classmethod
+    def exit_ecall(cls) -> "Instr":
+        """Environment call for exit (breaks execution)"""
+        return cls("ecall", [], breaking=True)
 
     @classmethod
     def ebreak(cls) -> "Instr":
@@ -472,10 +492,10 @@ class Function:
 
     def gen(self):
         lines = []
-        
+
         if self.global_:
             lines.append(f'.globl {self.name}')
-        
+
         lines.append(f'{self.name}:')
 
         blocks = self.blocks.copy()
@@ -508,7 +528,7 @@ class Program:
 
     def gen(self):
         lines = []
-        
+
         # Data section
         if self.data_section:
             lines.append('.data')
@@ -597,6 +617,18 @@ class Reg:
     FT10 = "ft10"  # Temporary (f30)
     FT11 = "ft11"  # Temporary (f31)
 
+
+CALLER_SAVED = [
+    Reg.RA,
+    Reg.T0, Reg.T1, Reg.T2, Reg.T3, Reg.T4, Reg.T5, Reg.T6,
+    Reg.A0, Reg.A1, Reg.A2, Reg.A3, Reg.A4, Reg.A5, Reg.A6,
+]
+
+CALLEE_SAVED = [
+    Reg.SP,
+    Reg.S0, Reg.S1, Reg.S2, Reg.S3, Reg.S4, Reg.S5, Reg.S6,
+    Reg.S7, Reg.S8, Reg.S9, Reg.S10, Reg.S11,
+]
 
 # System call numbers for common operations
 class SysCall:
