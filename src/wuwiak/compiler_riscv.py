@@ -142,7 +142,8 @@ class CompilerEnv:
         self.var_storage_stack = [{}]
 
         # Save necessary registers
-        save_registers(self, riscv.CALLEE_SAVED)
+        if name != 'main':
+            save_registers(self, riscv.CALLEE_SAVED)
 
         # Set up function arguments in registers
         if len(args) >= 8:
@@ -625,10 +626,6 @@ def compile_function(env: CompilerEnv, fdecl: ast.FunDecl):
     is_main = fdecl.name == "main"
     env.start_function(fdecl.name, fdecl.args, is_main)
 
-    # # Initialize stack pointer for main function
-    # if is_main:
-    #     env.emit(Instr.li(Reg.SP, 0x10010000).with_comment("Initialize stack pointer"))
-
     # Compile function body
     compile_block(env, fdecl.body)
 
@@ -636,21 +633,15 @@ def compile_function(env: CompilerEnv, fdecl: ast.FunDecl):
     if not env.current_block.is_closed():
         if is_main:
             # Main function: use exit system call
-            if is_void_type(fdecl.ret):
-                env.emit(Instr.li(Reg.A0, 0).with_comment("Exit code 0"))
             env.emit(
-                Instr.li(Reg.A7, riscv.SysCall.EXIT).with_comment("Exit system call"),
-                Instr.ecall().with_comment("Exit program")
+                Instr.li(Reg.A0, 0).with_comment("Exit with code 0"),
+                Instr.li(Reg.A7, riscv.SysCall.EXIT),
+                Instr.ecall(),
             )
         elif is_void_type(fdecl.ret):
             # Function epilogue for void functions
+            restore_registers(env, riscv.CALLEE_SAVED)
             env.emit(Instr.ret().with_comment("Return from void function"))
-        else:
-            # Non-void function without explicit return - return default value
-            env.emit(
-                Instr.li(Reg.A0, 0).with_comment("Default return value"),
-                Instr.ret().with_comment("Return default value")
-            )
 
     env.end_function()
 
