@@ -46,8 +46,9 @@ class CompilerEnv:
     label_counter: int = 0
     string_counter: int = 0
 
-    # Static data database
+    # Label data database
     strings: typing.Dict[str, str] = field(default_factory=lambda: {})
+    functions: typing.Dict[str, str] = field(default_factory=lambda: {})
 
     # Register allocation
     var_counter: int = 0  # Global counter for variable register allocation
@@ -88,11 +89,12 @@ class CompilerEnv:
         self.var_counter += 1
         return reg
 
-    def new_label(self, hint: str = "label") -> str:
+    def new_label(self, hint: str = "label", keep: bool = False) -> str:
         """Generate a new unique label"""
         current_fun = self.current_function.name
         label = f"{current_fun}$_{hint}_{self.label_counter}"
-        self.label_counter += 1
+        if not keep:
+            self.label_counter += 1
         return label
 
     def new_string(self) -> str:
@@ -112,6 +114,11 @@ class CompilerEnv:
         self.add_data(f'{label}: .string {json.dumps(string)}')
         return label
 
+    def get_function(self, name) -> str:
+        # We alias the name so it does not clash with register names
+        return name if name == 'main' else  f'fun${name}'
+
+
     def get_target_reg(self) -> str:
         """Get target register for integer values"""
         return Reg.T(self.target)
@@ -130,7 +137,7 @@ class CompilerEnv:
 
     def start_function(self, name: str, args: typing.List[typing.Tuple[ast.Type, str]], is_main: bool = False):
         """Start a new function"""
-        self.current_function = riscv.Function(name=name, global_=is_main)
+        self.current_function = riscv.Function(name=self.get_function(name), global_=is_main)
         self.current_block = riscv.Block(name=riscv.INIT_BLOCK)
         self.current_function.blocks[riscv.INIT_BLOCK] = self.current_block
 
@@ -140,21 +147,6 @@ class CompilerEnv:
 
         # Reset scope stack to just the global scope for function parameters
         self.var_storage_stack = [{}]
-
-        # Save necessary registers
-        if name != 'main':
-            save_registers(self, riscv.CALLEE_SAVED)
-
-        # Set up function arguments in registers
-        if len(args) >= 8:
-            raise ValueError("Can't handle that many arguments!")
-        for i, (_typ, arg_name) in enumerate(args):
-            if i < 8:  # First 8 args go in a0-a7
-                arg_reg = Reg.A(i)
-                # Copy argument to a saved register to preserve it across function calls
-                saved_reg = self.allocate_var_register()
-                self.emit(Instr.mv(saved_reg, arg_reg).with_comment(f"Save parameter '{arg_name}'"))
-                self.add_variable(arg_name, RegStorage(saved_reg))
 
     def end_function(self):
         """Finish current function"""
@@ -329,7 +321,7 @@ def compile_builtin_function(env: CompilerEnv, fun: str, args: typing.List[ast.E
             )
 
         case _:
-            raise ValueError(f"Unsupported built-in function: {fun}")
+            raise ValueError(f"Unsupported built-in function: '{fun}'")
 
 
 def compile_function_call(env: CompilerEnv, fun: str, args: typing.List[ast.Expr]):
@@ -352,7 +344,7 @@ def compile_function_call(env: CompilerEnv, fun: str, args: typing.List[ast.Expr
     save_registers(env, saved_regs)
 
     # Load arguments to argument registers
-    env.emit(Instr.nil().with_comment(f"Loading args for {fun}"))
+    env.emit(Instr.nil().with_comment(f"Loading args for '{fun}'"))
 
     for ia, (it, arg) in enumerate(enumerate(args, old_target)):
         tmp_reg = Reg.T(it)
@@ -363,8 +355,8 @@ def compile_function_call(env: CompilerEnv, fun: str, args: typing.List[ast.Expr
         )
 
     # Function call
-    env.emit(Instr.nil().with_comment(f"Calling {fun}"))
-    env.emit(Instr.jal(Reg.RA, fun).with_comment(f"Call function {fun}"))
+    fun_label = env.get_function(fun)
+    env.emit(Instr.jal(Reg.RA, fun_label).with_comment(f"Call function '{fun}'"))
 
     # Move return value to target register
     target_reg = env.get_target_reg()
@@ -442,23 +434,36 @@ def compile_comparison(env: CompilerEnv, op: str, args: typing.List[ast.Expr]):
     # Use simple register operations instead of branches
     match op:
         case '==':
-            env.emit(Instr.sub(target_reg, left_reg, right_reg).with_comment("Compute difference"))
-            env.emit(Instr.seqz(target_reg, target_reg).with_comment("Set if equal (difference is zero)"))
+            env.emit(
+                Instr.sub(target_reg, left_reg, right_reg).with_comment("Compute equality"),
+                Instr.seqz(target_reg, target_reg),
+        )
         case '!=':
-            env.emit(Instr.sub(target_reg, left_reg, right_reg).with_comment("Compute difference"))
-            env.emit(Instr.snez(target_reg, target_reg).with_comment("Set if not equal (difference is non-zero)"))
+            env.emit(
+                Instr.sub(target_reg, left_reg, right_reg).with_comment("Compute un-equality"),
+                Instr.snez(target_reg, target_reg),
+            )
         case '<':
-            env.emit(Instr.slt(target_reg, left_reg, right_reg).with_comment("Set if less than"))
+            env.emit(
+                Instr.slt(target_reg, left_reg, right_reg).with_comment("Compute lesser-than"),
+            )
         case '<=':
-            # a <= b  iff  !(a > b)  iff  !(b < a)
-            env.emit(Instr.slt(target_reg, right_reg, left_reg).with_comment("Set if b < a"))
-            env.emit(Instr.seqz(target_reg, target_reg).with_comment("Invert to get a <= b"))
+            # a <= b  -->  !(a > b)  -->  !(b < a)
+            env.emit(
+                Instr.slt(target_reg, right_reg, left_reg).with_comment("Compute lesser-equal"),
+                Instr.seqz(target_reg, target_reg),
+            )
         case '>':
-            env.emit(Instr.slt(target_reg, right_reg, left_reg).with_comment("Set if greater than"))
+            # a > b  -->  a < b
+            env.emit(
+                Instr.slt(target_reg, right_reg, left_reg).with_comment("Compute greater-than"),
+            )
         case '>=':
-            # a >= b  iff  !(a < b)
-            env.emit(Instr.slt(target_reg, left_reg, right_reg).with_comment("Set if a < b"))
-            env.emit(Instr.seqz(target_reg, target_reg).with_comment("Invert to get a >= b"))
+            # a >= b  -->  !(a < b)
+            env.emit(
+                Instr.slt(target_reg, left_reg, right_reg).with_comment("Compute greater-equal"),
+                Instr.seqz(target_reg, target_reg),
+            )
 
 
 def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
@@ -513,6 +518,7 @@ def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
                 # Void return
                 env.emit(Instr.li(Reg.A0, 0).with_comment("Void return"))
 
+            # Restore saved registers before we return
             restore_registers(env, riscv.CALLEE_SAVED)
 
             # Simple return
@@ -527,56 +533,40 @@ def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
 
 def compile_if(env: CompilerEnv, cond: ast.Expr, then_block: ast.Block, else_block: typing.Optional[ast.Block] = None):
     """Compile if statement"""
-    # Save current block before compiling condition
-    original_block = env.current_block
-
     # Compile condition
+    env.emit(Instr.nil().with_comment("If condition"))
     compile_expr(env, cond)
     cond_reg = env.get_target_reg()
 
-    # Restore current block after condition compilation
-    env.current_block = original_block
+    end_label = env.new_label("if_end")
+    else_label = env.new_label("if_else", keep=True)
+    if_false_label = else_label if else_block else end_label
+
+    # Conditional jump
+    env.emit(
+        Instr.beqz(cond_reg, if_false_label)
+        .with_comment("If-branch")
+    )
+
+    # Then block
+    compile_block(env, then_block)
 
     if else_block:
-        # if-then-else
-        else_label = env.new_label("if_else")
-        end_label = env.new_label("if_end")
-
-        # Branch to else if condition is false (zero)
-        env.emit(Instr.beqz(cond_reg, else_label).with_comment("Branch to else if condition is false"))
-
-        # Then block
-        compile_block(env, then_block)
-
         # Only emit jump if the then block didn't end with a breaking instruction
         if not env.current_block.is_closed():
             env.emit(Instr.j(end_label).with_comment("Jump to end after then block"))
 
-        # Create else block
+        # Else block
         else_riscv_block = riscv.Block(name=else_label)
         env.current_function.blocks[else_label] = else_riscv_block
         env.current_block = else_riscv_block
 
         compile_block(env, else_block)
 
-        # Create end block
-        end_riscv_block = riscv.Block(name=end_label)
-        env.current_function.blocks[end_label] = end_riscv_block
-        env.current_block = end_riscv_block
-    else:
-        # if-then only
-        end_label = env.new_label("if_end")
-
-        # Branch to end if condition is false
-        env.emit(Instr.beqz(cond_reg, end_label).with_comment("Branch to end if condition is false"))
-
-        # Then block
-        compile_block(env, then_block)
-
-        # Create end block
-        end_riscv_block = riscv.Block(name=end_label)
-        env.current_function.blocks[end_label] = end_riscv_block
-        env.current_block = end_riscv_block
+    # End block
+    end_riscv_block = riscv.Block(name=end_label)
+    env.current_function.blocks[end_label] = end_riscv_block
+    env.current_block = end_riscv_block
 
 
 def compile_block(env: CompilerEnv, block: ast.Block):
@@ -605,6 +595,7 @@ def save_registers(env, regs):
     # Save the registers
     for i, reg in enumerate(regs):
         env.emit(Instr.sw(reg, i * 4, Reg.SP))
+    env.emit(Instr.nil())
 
 
 def restore_registers(env, regs):
@@ -618,13 +609,38 @@ def restore_registers(env, regs):
         env.emit(Instr.lw(reg, i * 4, Reg.SP))
 
     # Update the stack pointer to free space
-    env.emit(Instr.addi(Reg.SP, Reg.SP, 4 * len(regs)))
+    env.emit(
+        Instr.addi(Reg.SP, Reg.SP, 4 * len(regs)),
+        Instr.nil(),
+    )
 
 
 def compile_function(env: CompilerEnv, fdecl: ast.FunDecl):
     """Compile a function declaration"""
     is_main = fdecl.name == "main"
     env.start_function(fdecl.name, fdecl.args, is_main)
+
+    env.emit(
+        Instr.nil().with_comment('#' * 70),
+        Instr.nil().with_comment('Function: ' + fdecl.name),
+        Instr.nil().with_comment('#' * 70),
+        Instr.nil(),
+    )
+
+    # Save necessary registers
+    if not is_main:
+        save_registers(env, riscv.CALLEE_SAVED)
+
+    # Set up function arguments in registers
+    if len(fdecl.args) >= 8:
+        raise ValueError("Too many args :(")
+    for i, (_typ, arg_name) in enumerate(fdecl.args):
+        if i < 8:  # First 8 args go in a0-a7
+            arg_reg = Reg.A(i)
+            # Copy argument to a saved register to preserve it across function calls
+            saved_reg = env.allocate_var_register()
+            env.emit(Instr.mv(saved_reg, arg_reg).with_comment(f"Save parameter '{arg_name}'"))
+            env.add_variable(arg_name, RegStorage(saved_reg))
 
     # Compile function body
     compile_block(env, fdecl.body)
