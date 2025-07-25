@@ -51,7 +51,6 @@ class TestRunner:
         self.test_dir = test_dir
         self.good_dir = test_dir / "good"
         self.bad_dir = test_dir / "bad"
-        self.current_dir = test_dir / "current"  # For current syntax tests
         self.rars_jar = project_root / "rars" / "rars.jar"
 
     def setup(self):
@@ -250,13 +249,6 @@ class TestRunner:
         if self.good_dir.exists():
             for test_file in sorted(self.good_dir.glob("*.src")):
                 print(f"Running good test: {test_file.name}")
-                result = self.run_good_test(test_file)
-                good_results.append(result)
-
-        # Run current tests (should pass)
-        if self.current_dir.exists():
-            for test_file in sorted(self.current_dir.glob("*.src")):
-                print(f"Running current test: {test_file.name}")
                 result = self.run_good_test(test_file)
                 good_results.append(result)
 

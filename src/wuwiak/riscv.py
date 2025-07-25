@@ -35,6 +35,10 @@ class Instr:
         """Return a copy of this instruction with a comment attached"""
         return dataclasses.replace(self, comment=comment)
 
+    @classmethod
+    def nil(cls) -> "Instr":
+        return cls("", [])
+
     # --- Load immediate and constants ---
 
     @classmethod

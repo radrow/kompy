@@ -1,0 +1,38 @@
+[flake8]
+max-line-length = 120
+extend-ignore =
+    # whitespace before ':' (conflicts with black)
+    E203,
+    # line too long (already handled by max-line-length)
+    E501,
+    # line break before binary operator (conflicts with black)
+    W503,
+    # 'from module import *' used; sometimes fine in __init__.py
+    F403,
+    # name may be undefined, from star import; same
+    F405,
+    # too complex
+    C901,
+    # radon/mccabe - ignore complexity/too many branches etc
+    R701, R702, R703, R704, R711, R712,
+    # pylint-style: too many attrs, args, branches, etc
+    # PLR0904, PLR0911, PLR0912, PLR0913, PLR0914, PLR0915,
+    # magic value
+    # PLR2004,
+    # 'global' statement
+    # PLW0603,
+exclude =
+    .git,
+    __pycache__,
+    build,
+    dist,
+    .venv,
+    venv,
+    .eggs,
+    *.egg,
+    .mypy_cache,
+    .pytest_cache
+
+per-file-ignores =
+    # allow unused/star imports in package initializers
+    __init__.py: F401, F403, F405

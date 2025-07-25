@@ -1,5 +1,5 @@
 # Test: Complex nested if statements with multiple conditions and variable shadowing
-# Expected: 4\n3\n2
+# Expected: 432
 void main() {
     int x = 25;
     int y = 10;

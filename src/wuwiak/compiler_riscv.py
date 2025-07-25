@@ -46,6 +46,9 @@ class CompilerEnv:
     label_counter: int = 0
     string_counter: int = 0
 
+    # Static data database
+    strings: typing.Dict[str, str] = field(default_factory=lambda: {})
+
     # Register allocation
     var_counter: int = 0  # Global counter for variable register allocation
 
@@ -87,19 +90,31 @@ class CompilerEnv:
 
     def new_label(self, hint: str = "label") -> str:
         """Generate a new unique label"""
-        label = f"{hint}_{self.label_counter}"
+        current_fun = self.current_function.name
+        label = f"{current_fun}$_{hint}_{self.label_counter}"
         self.label_counter += 1
         return label
 
     def new_string(self) -> str:
         """Generate a new string label"""
-        label = f"string_{self.string_counter}"
+        current_fun = self.current_function.name
+        label = f"{current_fun}$__string_{self.string_counter}"
         self.string_counter += 1
+        return label
+
+    def get_string(self, string) -> str:
+        """Returns an existing label for a static string, or generates a fresh one"""
+        if string in self.strings:
+            return self.strings[string]
+
+        label = self.new_string()
+        self.strings[string] = label
+        self.add_data(f'{label}: .string {json.dumps(string)}')
         return label
 
     def get_target_reg(self) -> str:
         """Get target register for integer values"""
-        return f"t{self.target}"
+        return Reg.T(self.target)
 
     def emit(self, *instrs: Instr):
         """Emit one or more instructions to current block"""
@@ -126,12 +141,15 @@ class CompilerEnv:
         # Reset scope stack to just the global scope for function parameters
         self.var_storage_stack = [{}]
 
+        # Save necessary registers
+        save_registers(self, riscv.CALLEE_SAVED)
+
         # Set up function arguments in registers
         if len(args) >= 8:
             raise ValueError("Can't handle that many arguments!")
         for i, (_typ, arg_name) in enumerate(args):
             if i < 8:  # First 8 args go in a0-a7
-                arg_reg = f"a{i}"
+                arg_reg = Reg.A(i)
                 # Copy argument to a saved register to preserve it across function calls
                 saved_reg = self.allocate_var_register()
                 self.emit(Instr.mv(saved_reg, arg_reg).with_comment(f"Save parameter '{arg_name}'"))
@@ -186,8 +204,7 @@ def compile_expr(env: CompilerEnv, expr: ast.Expr):
 
         case ast.String(v=value):
             target_reg = env.get_target_reg()
-            string_label = env.new_string()
-            env.add_data(f'{string_label}: .string {json.dumps(value)}')
+            string_label = env.get_string(value)
             env.emit(
                 Instr.la(target_reg, string_label)
             )
@@ -277,7 +294,7 @@ def compile_unary_op(env: CompilerEnv, op: str, args: typing.List[ast.Expr]):
 
 
 def compile_builtin_function(env: CompilerEnv, fun: str, args: typing.List[ast.Expr]):
-    """Compile built-in functions (print_int, print_bool, print_string)"""
+    """Compile built-in functions"""
     match fun:
         case 'print_int':
             compile_expr(env, args[0])
@@ -318,6 +335,8 @@ def compile_function_call(env: CompilerEnv, fun: str, args: typing.List[ast.Expr
     """Compile user-defined function call"""
 
     # Compile arguments and load into temporary registers
+    env.emit(Instr.nil(), Instr.nil().with_comment(f"Compiling args for {fun}"))
+
     old_target = env.target
     for i, arg in enumerate(args, old_target):
         if i < Reg.T_REGS:
@@ -332,6 +351,8 @@ def compile_function_call(env: CompilerEnv, fun: str, args: typing.List[ast.Expr
     save_registers(env, saved_regs)
 
     # Load arguments to argument registers
+    env.emit(Instr.nil().with_comment(f"Loading args for {fun}"))
+
     for ia, (it, arg) in enumerate(enumerate(args, old_target)):
         tmp_reg = Reg.T(it)
         arg_reg = Reg.A(ia)
@@ -341,6 +362,7 @@ def compile_function_call(env: CompilerEnv, fun: str, args: typing.List[ast.Expr
         )
 
     # Function call
+    env.emit(Instr.nil().with_comment(f"Calling {fun}"))
     env.emit(Instr.jal(Reg.RA, fun).with_comment(f"Call function {fun}"))
 
     # Move return value to target register
@@ -490,6 +512,8 @@ def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
                 # Void return
                 env.emit(Instr.li(Reg.A0, 0).with_comment("Void return"))
 
+            restore_registers(env, riscv.CALLEE_SAVED)
+
             # Simple return
             env.emit(Instr.ret().with_comment("Return from function"))
 
@@ -570,10 +594,11 @@ def compile_block(env: CompilerEnv, block: ast.Block):
 def save_registers(env, regs):
     """Save registers onto the stack in order"""
 
+    env.emit(Instr.nil().with_comment(f"Saving registers: {regs}"))
+
     # Update the stack pointer to make space
     env.emit(
         Instr.addi(Reg.SP, Reg.SP, -4 * len(regs))
-        .with_comment(f"Saving registers: {regs}")
     )
 
     # Save the registers
@@ -585,12 +610,11 @@ def restore_registers(env, regs):
     """Restore registers from stack. Assumes they were saved in order with
     increasing offset from the stack pointer."""
 
+    env.emit(Instr.nil().with_comment(f"Restoring registers: {regs}"))
+
     # Load the registers
     for i, reg in enumerate(regs):
-        instr = Instr.lw(reg, i * 4, Reg.SP)
-        if i == 0:
-            instr = instr.with_comment(f"Restoring registers: {regs}")
-        env.emit(instr)
+        env.emit(Instr.lw(reg, i * 4, Reg.SP))
 
     # Update the stack pointer to free space
     env.emit(Instr.addi(Reg.SP, Reg.SP, 4 * len(regs)))

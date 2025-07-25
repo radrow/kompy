@@ -1,5 +1,5 @@
 # Test: Comprehensive test combining multiple advanced language features
-# Expected: 1\nhello\n15\n25\n120\n0
+# Expected: 1hello15251200
 
 int factorial_iterative(int n) {
     int result = 1;

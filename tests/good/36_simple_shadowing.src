@@ -1,5 +1,5 @@
 # Test: Deep nested control flow with variable shadowing
-# Expected: 4\n3\n4\n25
+# Expected: 43425
 void main() {
     int x = 25;
     

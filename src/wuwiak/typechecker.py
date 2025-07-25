@@ -29,6 +29,8 @@ t_string = ast.TypeVar(name='string')
 
 t_void = ast.TypeVar(name='void')
 
+t_any = ast.TypeVar(name='$any')
+
 RETURN_VAR = '$RETURN'
 
 
@@ -58,6 +60,7 @@ def init_env():
         'print_int': t_fun(t_int, t_void),
         'print_bool': t_fun(t_bool, t_void),
         'print_string': t_fun(t_string, t_void),
+        'print': t_fun(t_any, t_void),
         'itos': t_fun(t_int, t_string),
     }
 
@@ -76,6 +79,9 @@ def match_type(t_super, t_sub):
     """
     Whether `t0` is a supertype of `t1`.
     """
+    if t_super == t_any:
+        return
+
     if t_super != t_sub:
         raise TypecheckError(f"Type error: expected {t_super}, got {t_sub}")
 
@@ -120,8 +126,22 @@ def tc_expr(env, expr):
                         arg_t = tc_expr(env, arg)
                         match_type(arg_type, arg_t.type)
                         args_t.append(arg_t)
+
+                        # Dispatch polymorphic print
+                        if fun == 'print':
+                            match args_t[0].type:
+                                case ast.TypeVar(name='int'):
+                                    fun = 'print_int'
+                                case ast.TypeVar(name='string'):
+                                    fun = 'print_string'
+                                case ast.TypeVar(name='bool'):
+                                    fun = 'print_bool'
+                                case _:
+                                    raise TypecheckError(f"Unprintable type {args_t[0].type}")
+
                     return attrs.evolve(
                         expr,
+                        fun=fun,
                         args=args_t,
                         type=ret
                     )
@@ -163,6 +183,8 @@ def tc_block(env, tail, block):
                 else_block_t = None
                 if else_block:
                     else_block_t = tc_block(env, tail, else_block)
+                elif tail:
+                    raise TypecheckError("Missing return")
 
                 stmt_t = attrs.evolve(
                     stmt,

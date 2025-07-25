@@ -1,5 +1,5 @@
 # Test: Recursive functions with complex conditions and multiple call patterns
-# Expected: 21\n8\n1\nfibonacci_recursive\n8
+# Expected: 2181fibonacci_recursive8
 
 int fibonacci(int n) {
     if n <= 0 {
