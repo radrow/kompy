@@ -43,6 +43,11 @@ class Instr:
         return cls("li", [rd, imm])
 
     @classmethod
+    def la(cls, rd: str, label: str) -> "Instr":
+        """Load address"""
+        return cls("la", [rd, label])
+
+    @classmethod
     def lui(cls, rd: str, imm: int) -> "Instr":
         """Load upper immediate"""
         return cls("lui", [rd, imm])
@@ -582,6 +587,26 @@ class Reg:
     T4 = "t4"      # Temporary (x29)
     T5 = "t5"      # Temporary (x30)
     T6 = "t6"      # Temporary (x31)
+
+    T_REGS = 7
+    A_REGS = 8
+    S_REGS = 12
+
+    @classmethod
+    def A(cls, i: int):
+        assert 0 <= i < cls.A_REGS
+        return f'a{i}'
+
+    @classmethod
+    def T(cls, i: int):
+        assert 0 <= i < cls.T_REGS
+        return f't{i}'
+
+    @classmethod
+    def S(cls, i: int):
+        assert 0 <= i < cls.S_REGS
+        return f's{i}'
+
 
     # Floating-point registers
     FT0 = "ft0"    # Temporary (f0)

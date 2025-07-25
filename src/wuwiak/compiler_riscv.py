@@ -3,10 +3,13 @@ RISC-V compiler backend - lowers typed AST to RISC-V RV32IM assembly
 Inspired by RISCVCodegen.fs
 """
 import typing
+import json
 from dataclasses import dataclass, field
 
 from . import ast
 from . import riscv
+from .riscv import Instr, Reg
+
 
 @dataclass
 class Storage:
@@ -98,7 +101,7 @@ class CompilerEnv:
         """Get target register for integer values"""
         return f"t{self.target}"
 
-    def emit(self, *instrs: riscv.Instr):
+    def emit(self, *instrs: Instr):
         """Emit one or more instructions to current block"""
         if not self.current_block:
             raise ValueError("No current block to emit to")
@@ -131,7 +134,7 @@ class CompilerEnv:
                 arg_reg = f"a{i}"
                 # Copy argument to a saved register to preserve it across function calls
                 saved_reg = self.allocate_var_register()
-                self.emit(riscv.Instr.mv(saved_reg, arg_reg).with_comment(f"Save parameter '{arg_name}'"))
+                self.emit(Instr.mv(saved_reg, arg_reg).with_comment(f"Save parameter '{arg_name}'"))
                 self.add_variable(arg_name, RegStorage(saved_reg))
 
     def end_function(self):
@@ -169,7 +172,7 @@ def compile_expr(env: CompilerEnv, expr: ast.Expr):
         case ast.Int(v=value):
             target_reg = env.get_target_reg()
             env.emit(
-                riscv.Instr.li(target_reg, value)
+                Instr.li(target_reg, value)
                 .with_comment(f"Load integer {value}")
             )
 
@@ -177,25 +180,20 @@ def compile_expr(env: CompilerEnv, expr: ast.Expr):
             target_reg = env.get_target_reg()
             int_value = 1 if value else 0
             env.emit(
-                riscv.Instr.li(target_reg, int_value)
+                Instr.li(target_reg, int_value)
                 .with_comment(f"Load boolean {value}")
             )
 
         case ast.String(v=value):
             target_reg = env.get_target_reg()
             string_label = env.new_string()
-            env.add_data(f'{string_label}: .string "{value}"')
+            env.add_data(f'{string_label}: .string {json.dumps(value)}')
             env.emit(
-                riscv.Instr.la()
-                riscv.Instr.lui(target_reg, f"%hi({string_label})")
-                .with_comment(f"Load string {value}"),
-
-                riscv.Instr.addi(target_reg, target_reg, f"%lo({string_label})")
-                .with_comment(f"Load string address low")
+                Instr.la(target_reg, string_label)
             )
 
         case ast.Var(name=name):
-            compile_variable_access(env, name, expr.type)
+            compile_var_read(env, name, expr.type)
 
         case ast.Call(fun=fun, args=args):
             compile_call(env, fun, args)
@@ -216,7 +214,7 @@ def compile_arithmetic_op(env: CompilerEnv, op: str, args: typing.List[ast.Expr]
 
     # Save left operand to a temporary saved register to preserve it across right operand compilation
     temp_reg = env.allocate_var_register()
-    env.emit(riscv.Instr.mv(temp_reg, left_reg).with_comment("Save left operand"))
+    env.emit(Instr.mv(temp_reg, left_reg).with_comment("Save left operand"))
 
     # Compile right operand to next register
     env.target += 1
@@ -230,15 +228,15 @@ def compile_arithmetic_op(env: CompilerEnv, op: str, args: typing.List[ast.Expr]
     # Integer arithmetic - use saved left operand
     match op:
         case '+':
-            env.emit(riscv.Instr.add(target_reg, temp_reg, right_reg).with_comment("Integer addition"))
+            env.emit(Instr.add(target_reg, temp_reg, right_reg).with_comment("Integer addition"))
         case '-':
-            env.emit(riscv.Instr.sub(target_reg, temp_reg, right_reg).with_comment("Integer subtraction"))
+            env.emit(Instr.sub(target_reg, temp_reg, right_reg).with_comment("Integer subtraction"))
         case '*':
-            env.emit(riscv.Instr.mul(target_reg, temp_reg, right_reg).with_comment("Integer multiplication"))
+            env.emit(Instr.mul(target_reg, temp_reg, right_reg).with_comment("Integer multiplication"))
         case '/':
-            env.emit(riscv.Instr.div(target_reg, temp_reg, right_reg).with_comment("Integer division"))
+            env.emit(Instr.div(target_reg, temp_reg, right_reg).with_comment("Integer division"))
         case '%':
-            env.emit(riscv.Instr.rem(target_reg, temp_reg, right_reg).with_comment("Integer remainder"))
+            env.emit(Instr.rem(target_reg, temp_reg, right_reg).with_comment("Integer remainder"))
 
 
 def compile_logical_op(env: CompilerEnv, op: str, args: typing.List[ast.Expr]):
@@ -259,9 +257,9 @@ def compile_logical_op(env: CompilerEnv, op: str, args: typing.List[ast.Expr]):
 
     match op:
         case '&&':
-            env.emit(riscv.Instr.and_(target_reg, left_reg, right_reg).with_comment("Logical AND"))
+            env.emit(Instr.and_(target_reg, left_reg, right_reg).with_comment("Logical AND"))
         case '||':
-            env.emit(riscv.Instr.or_(target_reg, left_reg, right_reg).with_comment("Logical OR"))
+            env.emit(Instr.or_(target_reg, left_reg, right_reg).with_comment("Logical OR"))
 
 
 def compile_unary_op(env: CompilerEnv, op: str, args: typing.List[ast.Expr]):
@@ -273,7 +271,7 @@ def compile_unary_op(env: CompilerEnv, op: str, args: typing.List[ast.Expr]):
         compile_expr(env, args[0])
         arg_reg = env.get_target_reg()
         target_reg = env.get_target_reg()
-        env.emit(riscv.Instr.seqz(target_reg, arg_reg).with_comment("Logical NOT"))
+        env.emit(Instr.seqz(target_reg, arg_reg).with_comment("Logical NOT"))
     else:
         raise ValueError(f"Unsupported unary operator: {op}")
 
@@ -282,68 +280,78 @@ def compile_builtin_function(env: CompilerEnv, fun: str, args: typing.List[ast.E
     """Compile built-in functions (print_int, print_bool, print_string)"""
     match fun:
         case 'print_int':
-            if len(args) != 1:
-                raise ValueError("print_int requires exactly 1 argument")
-
             compile_expr(env, args[0])
             arg_reg = env.get_target_reg()
             env.emit(
-                riscv.Instr.mv(riscv.Reg.A0, arg_reg).with_comment("Move argument to a0"),
-                riscv.Instr.li(riscv.Reg.A7, riscv.SysCall.PRINT_INT).with_comment("Print integer syscall"),
-                riscv.Instr.ecall().with_comment("Print integer")
+                Instr.mv(Reg.A0, arg_reg)
+                .with_comment("Print integer"),
+                Instr.li(Reg.A7, riscv.SysCall.PRINT_INT),
+                Instr.ecall(),
             )
 
         case 'print_bool':
-            if len(args) != 1:
-                raise ValueError("print_bool requires exactly 1 argument")
-
             compile_expr(env, args[0])
             arg_reg = env.get_target_reg()
             env.emit(
-                riscv.Instr.mv(riscv.Reg.A0, arg_reg).with_comment("Move boolean argument to a0"),
-                riscv.Instr.li(riscv.Reg.A7, riscv.SysCall.PRINT_INT).with_comment("Print boolean as integer syscall"),
-                riscv.Instr.ecall().with_comment("Print boolean")
+                Instr.mv(Reg.A0, arg_reg)
+                .with_comment("Print boolean"),
+
+                Instr.li(Reg.A7, riscv.SysCall.PRINT_INT),
+                Instr.ecall(),
             )
 
         case 'print_string':
-            if len(args) != 1:
-                raise ValueError("print_string requires exactly 1 argument")
-
             compile_expr(env, args[0])
             arg_reg = env.get_target_reg()
             env.emit(
-                riscv.Instr.mv(riscv.Reg.A0, arg_reg).with_comment("Move string address to a0"),
-                riscv.Instr.li(riscv.Reg.A7, riscv.SysCall.PRINT_STRING).with_comment("Print string syscall"),
-                riscv.Instr.ecall().with_comment("Print string")
+                Instr.mv(Reg.A0, arg_reg)
+                .with_comment("Print string"),
+                Instr.li(Reg.A7, riscv.SysCall.PRINT_STRING),
+                Instr.ecall(),
             )
 
         case _:
             raise ValueError(f"Unsupported built-in function: {fun}")
 
 
-def compile_user_function_call(env: CompilerEnv, fun: str, args: typing.List[ast.Expr]):
-    """Compile user-defined function calls"""
-    # Simplified version - no register saving for now
+def compile_function_call(env: CompilerEnv, fun: str, args: typing.List[ast.Expr]):
+    """Compile user-defined function call"""
 
-    # Compile arguments and load into argument registers
-    for i, arg in enumerate(args):
-        if i < 8:  # First 8 args go in a0-a7
-            old_target = env.target
+    # Compile arguments and load into temporary registers
+    old_target = env.target
+    for i, arg in enumerate(args, old_target):
+        if i < Reg.T_REGS:
             env.target = i  # Use register index as target
             compile_expr(env, arg)
-            arg_reg = env.get_target_reg()
-            env.emit(riscv.Instr.mv(f"a{i}", arg_reg).with_comment(f"Load argument {i+1}"))
-            env.target = old_target
+        else:
+            raise ValueError("Too many args :(")
+    env.target = old_target
+
+    # Save temporary and argument registers
+    saved_regs = [reg for reg in riscv.CALLER_SAVED if reg != env.get_target_reg()]
+    save_registers(env, saved_regs)
+
+    # Load arguments to argument registers
+    for ia, (it, arg) in enumerate(enumerate(args, old_target)):
+        tmp_reg = Reg.T(it)
+        arg_reg = Reg.A(ia)
+        env.emit(
+                Instr.mv(arg_reg, tmp_reg)
+                .with_comment(f"Load argument {ia}")
+        )
 
     # Function call
-    env.emit(riscv.Instr.jal(riscv.Reg.RA, fun).with_comment(f"Call function {fun}"))
+    env.emit(Instr.jal(Reg.RA, fun).with_comment(f"Call function {fun}"))
 
     # Move return value to target register
     target_reg = env.get_target_reg()
-    env.emit(riscv.Instr.mv(target_reg, riscv.Reg.A0).with_comment("Move return value"))
+    env.emit(Instr.mv(target_reg, Reg.A0).with_comment("Move return value"))
+
+    # Restore saved registers
+    restore_registers(env, saved_regs)
 
 
-def compile_variable_access(env: CompilerEnv, name: str, var_type: ast.Type):
+def compile_var_read(env: CompilerEnv, name: str, var_type: ast.Type):
     """Compile variable access and load into target register"""
     storage = env.lookup_variable(name)
     if storage is None:
@@ -357,11 +365,11 @@ def compile_variable_access(env: CompilerEnv, name: str, var_type: ast.Type):
         target_reg = env.get_target_reg()
         match storage:
             case RegStorage(reg=reg):
-                env.emit(riscv.Instr.mv(target_reg, reg).with_comment(f"Load variable '{name}'"))
+                env.emit(Instr.mv(target_reg, reg).with_comment(f"Load variable '{name}'"))
             case LabelStorage(label=label):
                 env.emit(
-                    riscv.Instr.lui(target_reg, f"%hi({label})").with_comment(f"Load variable '{name}' address"),
-                    riscv.Instr.addi(target_reg, target_reg, f"%lo({label})")
+                    Instr.lui(target_reg, f"%hi({label})").with_comment(f"Load variable '{name}' address"),
+                    Instr.addi(target_reg, target_reg, f"%lo({label})")
                 )
 
 
@@ -392,7 +400,7 @@ def compile_call(env: CompilerEnv, fun: str, args: typing.List[ast.Expr]):
 
     # Handle user-defined function calls
     else:
-        compile_user_function_call(env, fun, args)
+        compile_function_call(env, fun, args)
 
 
 def compile_comparison(env: CompilerEnv, op: str, args: typing.List[ast.Expr]):
@@ -411,23 +419,23 @@ def compile_comparison(env: CompilerEnv, op: str, args: typing.List[ast.Expr]):
     # Use simple register operations instead of branches
     match op:
         case '==':
-            env.emit(riscv.Instr.sub(target_reg, left_reg, right_reg).with_comment("Compute difference"))
-            env.emit(riscv.Instr.seqz(target_reg, target_reg).with_comment("Set if equal (difference is zero)"))
+            env.emit(Instr.sub(target_reg, left_reg, right_reg).with_comment("Compute difference"))
+            env.emit(Instr.seqz(target_reg, target_reg).with_comment("Set if equal (difference is zero)"))
         case '!=':
-            env.emit(riscv.Instr.sub(target_reg, left_reg, right_reg).with_comment("Compute difference"))
-            env.emit(riscv.Instr.snez(target_reg, target_reg).with_comment("Set if not equal (difference is non-zero)"))
+            env.emit(Instr.sub(target_reg, left_reg, right_reg).with_comment("Compute difference"))
+            env.emit(Instr.snez(target_reg, target_reg).with_comment("Set if not equal (difference is non-zero)"))
         case '<':
-            env.emit(riscv.Instr.slt(target_reg, left_reg, right_reg).with_comment("Set if less than"))
+            env.emit(Instr.slt(target_reg, left_reg, right_reg).with_comment("Set if less than"))
         case '<=':
             # a <= b  iff  !(a > b)  iff  !(b < a)
-            env.emit(riscv.Instr.slt(target_reg, right_reg, left_reg).with_comment("Set if b < a"))
-            env.emit(riscv.Instr.seqz(target_reg, target_reg).with_comment("Invert to get a <= b"))
+            env.emit(Instr.slt(target_reg, right_reg, left_reg).with_comment("Set if b < a"))
+            env.emit(Instr.seqz(target_reg, target_reg).with_comment("Invert to get a <= b"))
         case '>':
-            env.emit(riscv.Instr.slt(target_reg, right_reg, left_reg).with_comment("Set if greater than"))
+            env.emit(Instr.slt(target_reg, right_reg, left_reg).with_comment("Set if greater than"))
         case '>=':
             # a >= b  iff  !(a < b)
-            env.emit(riscv.Instr.slt(target_reg, left_reg, right_reg).with_comment("Set if a < b"))
-            env.emit(riscv.Instr.seqz(target_reg, target_reg).with_comment("Invert to get a >= b"))
+            env.emit(Instr.slt(target_reg, left_reg, right_reg).with_comment("Set if a < b"))
+            env.emit(Instr.seqz(target_reg, target_reg).with_comment("Invert to get a >= b"))
 
 
 def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
@@ -449,7 +457,7 @@ def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
                     env.add_variable(name, RegStorage(var_reg))
 
                     # Move value to variable storage
-                    env.emit(riscv.Instr.mv(var_reg, value_reg).with_comment(f"Store variable '{name}'"))
+                    env.emit(Instr.mv(var_reg, value_reg).with_comment(f"Store variable '{name}'"))
                 else:
                     # Uninitialized variable - just allocate storage
                     var_reg = env.allocate_var_register()
@@ -467,7 +475,7 @@ def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
             # Store to variable
             match storage:
                 case RegStorage(reg=reg):
-                    env.emit(riscv.Instr.mv(reg, value_reg).with_comment(f"Assign to variable '{name}'"))
+                    env.emit(Instr.mv(reg, value_reg).with_comment(f"Assign to variable '{name}'"))
                 case _:
                     raise ValueError(f"Unsupported storage type for assignment to '{name}'")
 
@@ -477,13 +485,13 @@ def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
                 compile_expr(env, expr)
                 result_reg = env.get_target_reg()
                 # Move result to return register
-                env.emit(riscv.Instr.mv(riscv.Reg.A0, result_reg).with_comment("Move return value"))
+                env.emit(Instr.mv(Reg.A0, result_reg).with_comment("Move return value"))
             else:
                 # Void return
-                env.emit(riscv.Instr.li(riscv.Reg.A0, 0).with_comment("Void return"))
+                env.emit(Instr.li(Reg.A0, 0).with_comment("Void return"))
 
             # Simple return
-            env.emit(riscv.Instr.ret().with_comment("Return from function"))
+            env.emit(Instr.ret().with_comment("Return from function"))
 
         case ast.If(cond=cond, then_block=then_block, else_block=else_block):
             compile_if(env, cond, then_block, else_block)
@@ -510,14 +518,14 @@ def compile_if(env: CompilerEnv, cond: ast.Expr, then_block: ast.Block, else_blo
         end_label = env.new_label("if_end")
 
         # Branch to else if condition is false (zero)
-        env.emit(riscv.Instr.beqz(cond_reg, else_label).with_comment("Branch to else if condition is false"))
+        env.emit(Instr.beqz(cond_reg, else_label).with_comment("Branch to else if condition is false"))
 
         # Then block
         compile_block(env, then_block)
 
         # Only emit jump if the then block didn't end with a breaking instruction
         if not env.current_block.is_closed():
-            env.emit(riscv.Instr.j(end_label).with_comment("Jump to end after then block"))
+            env.emit(Instr.j(end_label).with_comment("Jump to end after then block"))
 
         # Create else block
         else_riscv_block = riscv.Block(name=else_label)
@@ -535,7 +543,7 @@ def compile_if(env: CompilerEnv, cond: ast.Expr, then_block: ast.Block, else_blo
         end_label = env.new_label("if_end")
 
         # Branch to end if condition is false
-        env.emit(riscv.Instr.beqz(cond_reg, end_label).with_comment("Branch to end if condition is false"))
+        env.emit(Instr.beqz(cond_reg, end_label).with_comment("Branch to end if condition is false"))
 
         # Then block
         compile_block(env, then_block)
@@ -559,14 +567,43 @@ def compile_block(env: CompilerEnv, block: ast.Block):
         env.pop_scope()
 
 
+def save_registers(env, regs):
+    """Save registers onto the stack in order"""
+
+    # Update the stack pointer to make space
+    env.emit(
+        Instr.addi(Reg.SP, Reg.SP, -4 * len(regs))
+        .with_comment(f"Saving registers: {regs}")
+    )
+
+    # Save the registers
+    for i, reg in enumerate(regs):
+        env.emit(Instr.sw(reg, i * 4, Reg.SP))
+
+
+def restore_registers(env, regs):
+    """Restore registers from stack. Assumes they were saved in order with
+    increasing offset from the stack pointer."""
+
+    # Load the registers
+    for i, reg in enumerate(regs):
+        instr = Instr.lw(reg, i * 4, Reg.SP)
+        if i == 0:
+            instr = instr.with_comment(f"Restoring registers: {regs}")
+        env.emit(instr)
+
+    # Update the stack pointer to free space
+    env.emit(Instr.addi(Reg.SP, Reg.SP, 4 * len(regs)))
+
+
 def compile_function(env: CompilerEnv, fdecl: ast.FunDecl):
     """Compile a function declaration"""
     is_main = fdecl.name == "main"
     env.start_function(fdecl.name, fdecl.args, is_main)
 
-    # Initialize stack pointer for main function
-    if is_main:
-        env.emit(riscv.Instr.li(riscv.Reg.SP, 0x10010000).with_comment("Initialize stack pointer"))
+    # # Initialize stack pointer for main function
+    # if is_main:
+    #     env.emit(Instr.li(Reg.SP, 0x10010000).with_comment("Initialize stack pointer"))
 
     # Compile function body
     compile_block(env, fdecl.body)
@@ -576,19 +613,19 @@ def compile_function(env: CompilerEnv, fdecl: ast.FunDecl):
         if is_main:
             # Main function: use exit system call
             if is_void_type(fdecl.ret):
-                env.emit(riscv.Instr.li(riscv.Reg.A0, 0).with_comment("Exit code 0"))
+                env.emit(Instr.li(Reg.A0, 0).with_comment("Exit code 0"))
             env.emit(
-                riscv.Instr.li(riscv.Reg.A7, riscv.SysCall.EXIT).with_comment("Exit system call"),
-                riscv.Instr.ecall().with_comment("Exit program")
+                Instr.li(Reg.A7, riscv.SysCall.EXIT).with_comment("Exit system call"),
+                Instr.ecall().with_comment("Exit program")
             )
         elif is_void_type(fdecl.ret):
             # Function epilogue for void functions
-            env.emit(riscv.Instr.ret().with_comment("Return from void function"))
+            env.emit(Instr.ret().with_comment("Return from void function"))
         else:
             # Non-void function without explicit return - return default value
             env.emit(
-                riscv.Instr.li(riscv.Reg.A0, 0).with_comment("Default return value"),
-                riscv.Instr.ret().with_comment("Return default value")
+                Instr.li(Reg.A0, 0).with_comment("Default return value"),
+                Instr.ret().with_comment("Return default value")
             )
 
     env.end_function()
