@@ -160,21 +160,6 @@ class CompilerEnv:
         self.program.add_data(directive)
 
 
-def is_int_type(typ: ast.Type) -> bool:
-    """Check if type is integer-like"""
-    return isinstance(typ, ast.TypeVar) and typ.name in ['int', 'bool']
-
-
-def is_string_type(typ: ast.Type) -> bool:
-    """Check if type is string"""
-    return isinstance(typ, ast.TypeVar) and typ.name == 'string'
-
-
-def is_void_type(typ: ast.Type) -> bool:
-    """Check if type is void"""
-    return isinstance(typ, ast.TypeVar) and typ.name == 'void'
-
-
 def compile_expr(env: CompilerEnv, expr: ast.Expr):
     """
     Compile an expression and store the result in the target register specified by env.
@@ -236,17 +221,18 @@ def compile_arithmetic_op(env: CompilerEnv, op: str, args: typing.List[ast.Expr]
     target_reg = env.get_target_reg()
 
     # Integer arithmetic - use saved left operand
+
     match op:
         case '+':
-            env.emit(Instr.add(target_reg, temp_reg, right_reg).with_comment("Integer addition"))
+            env.emit(Instr.add(target_reg, temp_reg, right_reg)
         case '-':
-            env.emit(Instr.sub(target_reg, temp_reg, right_reg).with_comment("Integer subtraction"))
+            env.emit(Instr.sub(target_reg, temp_reg, right_reg)
         case '*':
-            env.emit(Instr.mul(target_reg, temp_reg, right_reg).with_comment("Integer multiplication"))
+            env.emit(Instr.mul(target_reg, temp_reg, right_reg)
         case '/':
-            env.emit(Instr.div(target_reg, temp_reg, right_reg).with_comment("Integer division"))
+            env.emit(Instr.div(target_reg, temp_reg, right_reg)
         case '%':
-            env.emit(Instr.rem(target_reg, temp_reg, right_reg).with_comment("Integer remainder"))
+            env.emit(Instr.rem(target_reg, temp_reg, right_reg)
 
 
 def compile_logical_op(env: CompilerEnv, op: str, args: typing.List[ast.Expr]):
@@ -372,7 +358,7 @@ def compile_var_read(env: CompilerEnv, name: str, var_type: ast.Type):
     if storage is None:
         raise ValueError(f"Variable '{name}' not found in storage")
 
-    if is_void_type(var_type):
+    if var_type == t.t_void:
         # Unit-typed variable is ignored
         pass
     else:
@@ -474,7 +460,7 @@ def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
             compile_expr(env, expr)
 
         case ast.VarDecl(typ=typ, name=name, value=value):
-            if not is_void_type(typ):
+            if typ != t.t_void:
                 if value:
                     # Compile initialization value
                     compile_expr(env, value)
@@ -654,7 +640,7 @@ def compile_function(env: CompilerEnv, fdecl: ast.FunDecl):
                 Instr.li(Reg.A7, riscv.SysCall.EXIT),
                 Instr.ecall(),
             )
-        elif is_void_type(fdecl.ret):
+        elif fdecl.ret == t.t_void:
             # Function epilogue for void functions
             restore_registers(env, riscv.CALLEE_SAVED)
             env.emit(Instr.ret().with_comment("Return from void function"))
