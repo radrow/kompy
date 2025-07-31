@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from . import ast
 from . import riscv
+from . import typechecker
 from .riscv import Instr, Reg
 
 
@@ -224,15 +225,15 @@ def compile_arithmetic_op(env: CompilerEnv, op: str, args: typing.List[ast.Expr]
 
     match op:
         case '+':
-            env.emit(Instr.add(target_reg, temp_reg, right_reg)
+            env.emit(Instr.add(target_reg, temp_reg, right_reg))
         case '-':
-            env.emit(Instr.sub(target_reg, temp_reg, right_reg)
+            env.emit(Instr.sub(target_reg, temp_reg, right_reg))
         case '*':
-            env.emit(Instr.mul(target_reg, temp_reg, right_reg)
+            env.emit(Instr.mul(target_reg, temp_reg, right_reg))
         case '/':
-            env.emit(Instr.div(target_reg, temp_reg, right_reg)
+            env.emit(Instr.div(target_reg, temp_reg, right_reg))
         case '%':
-            env.emit(Instr.rem(target_reg, temp_reg, right_reg)
+            env.emit(Instr.rem(target_reg, temp_reg, right_reg))
 
 
 def compile_logical_op(env: CompilerEnv, op: str, args: typing.List[ast.Expr]):
@@ -358,7 +359,7 @@ def compile_var_read(env: CompilerEnv, name: str, var_type: ast.Type):
     if storage is None:
         raise ValueError(f"Variable '{name}' not found in storage")
 
-    if var_type == t.t_void:
+    if var_type == typechecker.t_void:
         # Unit-typed variable is ignored
         pass
     else:
@@ -460,7 +461,7 @@ def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
             compile_expr(env, expr)
 
         case ast.VarDecl(typ=typ, name=name, value=value):
-            if typ != t.t_void:
+            if typ != typechecker.t_void:
                 if value:
                     # Compile initialization value
                     compile_expr(env, value)
@@ -640,7 +641,7 @@ def compile_function(env: CompilerEnv, fdecl: ast.FunDecl):
                 Instr.li(Reg.A7, riscv.SysCall.EXIT),
                 Instr.ecall(),
             )
-        elif fdecl.ret == t.t_void:
+        elif fdecl.ret == typechecker.t_void:
             # Function epilogue for void functions
             restore_registers(env, riscv.CALLEE_SAVED)
             env.emit(Instr.ret().with_comment("Return from void function"))
