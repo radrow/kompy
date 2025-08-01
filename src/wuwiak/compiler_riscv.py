@@ -5,6 +5,7 @@ Inspired by RISCVCodegen.fs
 import typing
 import json
 from dataclasses import dataclass, field
+from contextlib import contextmanager
 
 from . import ast
 from . import riscv
@@ -27,6 +28,11 @@ class RegStorage(Storage):
 @dataclass
 class LabelStorage(Storage):
     """Variable stored in memory at a label"""
+    label: str
+
+
+@dataclass(kw_only=True)
+class CCFrame:
     label: str
 
 
@@ -53,6 +59,9 @@ class CompilerEnv:
 
     # Register allocation
     var_counter: int = 0  # Global counter for variable register allocation
+
+    outer_kurwa: typing.Optional[CCFrame] = None
+    outer_chuj: typing.Optional[CCFrame] = None
 
     @property
     def var_storage(self) -> typing.Dict[str, Storage]:
@@ -149,6 +158,9 @@ class CompilerEnv:
         # Reset scope stack to just the global scope for function parameters
         self.var_storage_stack = [{}]
 
+        self.outer_kurwa = None
+        self.outer_chuj = None
+
     def end_function(self):
         """Finish current function"""
         if self.current_function:
@@ -159,6 +171,24 @@ class CompilerEnv:
     def add_data(self, directive: str):
         """Add data directive to program"""
         self.program.add_data(directive)
+
+    @contextmanager
+    def outer_kurwa_context(self, val: CCFrame):
+        old_outer_kurwa = self.outer_kurwa
+        self.outer_kurwa = val
+        try:
+            yield
+        finally:
+            self.outer_kurwa = old_outer_kurwa
+
+    @contextmanager
+    def outer_chuj_context(self, val: CCFrame):
+        old_outer_chuj = self.outer_chuj
+        self.outer_chuj = val
+        try:
+            yield
+        finally:
+            self.outer_chuj = old_outer_chuj
 
 
 def compile_expr(env: CompilerEnv, expr: ast.Expr):
@@ -512,6 +542,16 @@ def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
         case ast.DopótyDopóki(cond=cond, body=body):
             compile_dopóty_dopóki(env, cond, body)
 
+        case ast.Kurwa():
+            if not env.outer_kurwa:
+                raise ValueError("`kurwa XD` outside of valid if-then branch")
+            env.emit(Instr.j(env.outer_kurwa.label).with_comment("kurwa XD"))
+
+        case ast.Chuj():
+            if not env.outer_chuj:
+                raise ValueError("`albo chuj` outside of if-else branch")
+            env.emit(Instr.j(env.outer_chuj.label).with_comment("albo chuj"))
+
         case _:
             raise ValueError(f"Unsupported statement type: {type(stmt)}")
 
@@ -524,6 +564,7 @@ def compile_if(env: CompilerEnv, cond: ast.Expr, then_block: ast.Block, else_blo
     cond_reg = env.get_target_reg()
 
     end_label = env.new_label("if_end")
+    then_label = env.new_label("if_then", keep=True)
     else_label = env.new_label("if_else", keep=True)
     if_false_label = else_label if else_block else end_label
 
@@ -534,7 +575,12 @@ def compile_if(env: CompilerEnv, cond: ast.Expr, then_block: ast.Block, else_blo
     )
 
     # Then block
-    compile_block(env, then_block)
+    env.emit(Instr.label(then_label))
+    if else_block:
+        with env.outer_kurwa_context(CCFrame(label=else_label)):
+            compile_block(env, then_block)
+    else:
+        compile_block(env, then_block)
 
     if else_block:
         # Only emit jump if the then block didn't end with a breaking instruction
@@ -546,7 +592,8 @@ def compile_if(env: CompilerEnv, cond: ast.Expr, then_block: ast.Block, else_blo
         env.current_function.blocks[else_label] = else_riscv_block
         env.current_block = else_riscv_block
 
-        compile_block(env, else_block)
+        with env.outer_chuj_context(CCFrame(label=then_label)):
+            compile_block(env, else_block)
 
     # End block
     end_riscv_block = riscv.Block(name=end_label)
