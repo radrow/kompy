@@ -208,10 +208,6 @@ def compile_arithmetic_op(env: CompilerEnv, op: str, args: typing.List[ast.Expr]
     compile_expr(env, args[0])
     left_reg = env.get_target_reg()
 
-    # Save left operand to a temporary saved register to preserve it across right operand compilation
-    temp_reg = env.allocate_var_register()
-    env.emit(Instr.mv(temp_reg, left_reg).with_comment("Save left operand"))
-
     # Compile right operand to next register
     env.target += 1
     compile_expr(env, args[1])
@@ -221,19 +217,18 @@ def compile_arithmetic_op(env: CompilerEnv, op: str, args: typing.List[ast.Expr]
     env.target = left_target
     target_reg = env.get_target_reg()
 
-    # Integer arithmetic - use saved left operand
-
+    # Apply operator
     match op:
         case '+':
-            env.emit(Instr.add(target_reg, temp_reg, right_reg))
+            env.emit(Instr.add(target_reg, left_reg, right_reg))
         case '-':
-            env.emit(Instr.sub(target_reg, temp_reg, right_reg))
+            env.emit(Instr.sub(target_reg, left_reg, right_reg))
         case '*':
-            env.emit(Instr.mul(target_reg, temp_reg, right_reg))
+            env.emit(Instr.mul(target_reg, left_reg, right_reg))
         case '/':
-            env.emit(Instr.div(target_reg, temp_reg, right_reg))
+            env.emit(Instr.div(target_reg, left_reg, right_reg))
         case '%':
-            env.emit(Instr.rem(target_reg, temp_reg, right_reg))
+            env.emit(Instr.rem(target_reg, left_reg, right_reg))
 
 
 def compile_logical_op(env: CompilerEnv, op: str, args: typing.List[ast.Expr]):
