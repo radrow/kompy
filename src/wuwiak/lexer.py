@@ -1,6 +1,7 @@
 import parsy as P
 
 keywords = [
+    'dopóty dopóki',
     'if',
     'else',
     'return',
@@ -21,7 +22,6 @@ def lex(lexeme):
     Single lexeme proceeded by a skip
     """
     return lexeme << skip
-
 
 def token(s):
     """

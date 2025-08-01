@@ -154,6 +154,14 @@ class If(Stmt):
     then_block: Block
     else_block: typing.Optional[Block] = None
 
+@frozen(auto_attribs=True, kw_only=True)
+class DopótyDopóki(Stmt):
+    """
+    Pętla dopóty-dopóki
+    """
+    cond: Expr
+    body: Block
+
 
 # ==============================================================================
 # Top-level declarations

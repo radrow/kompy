@@ -192,6 +192,19 @@ def tc_block(env, tail, block):
                     then_block=then_block_t,
                     else_block=else_block_t
                 )
+            case ast.DopótyDopóki(cond=cond, body=body):
+                cond_t = tc_expr(env, cond)
+                match_type(t_bool, cond_t.type)
+                body_t = tc_block(env, tail, body)
+
+                if tail:
+                    raise TypecheckError("Missing return")
+
+                stmt_t = attrs.evolve(
+                    stmt,
+                    cond=cond_t,
+                    body=body_t,
+                )
             case ast.VarDecl(typ=typ, name=name, value=value):
                 if tail:
                     raise TypecheckError("Missing return")

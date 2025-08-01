@@ -203,12 +203,19 @@ stmt_if = P.seq(
     else_block=(L.kw('else') >> block).optional(),
 ).combine_dict(ast.If)
 
+stmt_dopóty_dopóki = P.seq(
+    _dopóty=L.kw('dopóty dopóki'),
+    cond=expr,
+    body=block,
+).combine_dict(ast.DopótyDopóki)
+
 stmt.become(P.alt(
     stmt_var_decl,
     stmt_assg,
     stmt_return,
     stmt_expr,
     stmt_if,
+    stmt_dopóty_dopóki,
 ).desc("statement"))
 
 block.become(bracs(

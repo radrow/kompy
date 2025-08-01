@@ -509,6 +509,9 @@ def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
         case ast.If(cond=cond, then_block=then_block, else_block=else_block):
             compile_if(env, cond, then_block, else_block)
 
+        case ast.DopótyDopóki(cond=cond, body=body):
+            compile_dopóty_dopóki(env, cond, body)
+
         case _:
             raise ValueError(f"Unsupported statement type: {type(stmt)}")
 
@@ -544,6 +547,37 @@ def compile_if(env: CompilerEnv, cond: ast.Expr, then_block: ast.Block, else_blo
         env.current_block = else_riscv_block
 
         compile_block(env, else_block)
+
+    # End block
+    end_riscv_block = riscv.Block(name=end_label)
+    env.current_function.blocks[end_label] = end_riscv_block
+    env.current_block = end_riscv_block
+
+
+def compile_dopóty_dopóki(env: CompilerEnv, cond: ast.Expr, body: ast.Block):
+    end_label = env.new_label("dopóty_dopóki_end")
+    cond_label = env.new_label("dopóty_dopóki_cond", keep=True)
+
+    env.emit(Instr.j(cond_label))
+
+    cond_block = riscv.Block(name=cond_label)
+    env.current_function.blocks[cond_label] = cond_block
+    env.current_block = cond_block
+
+    # Compile condition
+    env.emit(Instr.nil().with_comment("Dopóty-dopóki warunek"))
+    compile_expr(env, cond)
+    cond_reg = env.get_target_reg()
+
+    # Conditional jump
+    env.emit(
+        Instr.beqz(cond_reg, end_label)
+        .with_comment("Dopóty-dopóki-gałonź")
+    )
+
+    # Then block
+    compile_block(env, body)
+    env.emit(Instr.j(cond_label).with_comment("Looooop"))
 
     # End block
     end_riscv_block = riscv.Block(name=end_label)
