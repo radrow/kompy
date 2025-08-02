@@ -1,6 +1,8 @@
 import parsy as P
 
 keywords = [
+    'kurwa XD',
+    'albo chuj',
     'dopóty dopóki',
     'if',
     'else',

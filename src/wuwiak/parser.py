@@ -227,6 +227,16 @@ stmt_if = P.seq(
     else_block=(L.kw('else') >> block).optional(),
 ).combine_dict(ast.If)
 
+stmt_kurwa = P.seq(
+    _return=L.kw('kurwa XD'),
+    _semi=L.semicolon,
+).combine_dict(ast.Kurwa)
+
+stmt_chuj = P.seq(
+    _return=L.kw('albo chuj'),
+    _semi=L.semicolon,
+).combine_dict(ast.Chuj)
+
 stmt_dopóty_dopóki = P.seq(
     _dopóty=L.kw('dopóty dopóki'),
     cond=expr,
@@ -234,12 +244,14 @@ stmt_dopóty_dopóki = P.seq(
 ).combine_dict(ast.DopótyDopóki)
 
 stmt.become(P.alt(
+    stmt_dopóty_dopóki,
+    stmt_kurwa,
+    stmt_chuj,
     stmt_var_decl,
     stmt_assg,
     stmt_return,
     stmt_expr,
     stmt_if,
-    stmt_dopóty_dopóki,
 ).desc("statement"))
 
 block.become(bracs(

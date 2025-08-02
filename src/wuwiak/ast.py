@@ -154,6 +154,21 @@ class If(Stmt):
     then_block: Block
     else_block: typing.Optional[Block] = None
 
+
+@frozen(auto_attribs=True, kw_only=True)
+class Kurwa(Stmt):
+    """
+    Kurwa statement (goto else)
+    """
+
+
+@frozen(auto_attribs=True, kw_only=True)
+class Chuj(Stmt):
+    """
+    Chuj statement (goto if)
+    """
+
+
 @frozen(auto_attribs=True, kw_only=True)
 class DopótyDopóki(Stmt):
     """

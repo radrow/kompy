@@ -32,6 +32,8 @@ t_void = ast.TypeVar(name='void')
 t_any = ast.TypeVar(name='$any')
 
 RETURN_VAR = '$RETURN'
+KURWA_VAR = '$KURWA'
+CHUJ_VAR = '$CHUJ'
 
 
 def t_fun(args, ret):
@@ -62,6 +64,8 @@ def init_env():
         'print_string': t_fun(t_string, t_void),
         'print': t_fun(t_any, t_void),
         'itos': t_fun(t_int, t_string),
+        KURWA_VAR: False,
+        CHUJ_VAR: False,
     }
 
 
@@ -178,11 +182,21 @@ def tc_block(env, tail, block):
             case ast.If(cond=cond, then_block=then_block, else_block=else_block):
                 cond_t = tc_expr(env, cond)
                 match_type(t_bool, cond_t.type)
-                then_block_t = tc_block(env, tail, then_block)
+                if else_block and not env[KURWA_VAR]:
+                    env[KURWA_VAR] = True
+                    then_block_t = tc_block(env, tail, then_block)
+                    env[KURWA_VAR] = False
+                else:
+                    then_block_t = tc_block(env, tail, then_block)
 
                 else_block_t = None
                 if else_block:
-                    else_block_t = tc_block(env, tail, else_block)
+                    if not env[CHUJ_VAR]:
+                        env[CHUJ_VAR] = True
+                        else_block_t = tc_block(env, tail, else_block)
+                        env[CHUJ_VAR] = False
+                    else:
+                        else_block_t = tc_block(env, tail, else_block)
                 elif tail:
                     raise TypecheckError("Missing return")
 
@@ -229,6 +243,16 @@ def tc_block(env, tail, block):
                     stmt,
                     value=value_t
                 )
+            case ast.Kurwa():
+                if not env[KURWA_VAR]:
+                    raise TypecheckError("`kurwa XD` outside of valid if-then branch")
+                stmt_t = stmt
+            case ast.Chuj():
+                if not env[CHUJ_VAR]:
+                    raise TypecheckError("`albo chuj` outside of if-else branch")
+                stmt_t = stmt
+            case _:
+                raise ValueError(f"Unsupported statement type: {type(stmt)}")
         block_t.append(stmt_t)
 
     block_t = ast.Block(stmts=block_t)
