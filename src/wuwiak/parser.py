@@ -24,7 +24,7 @@ def parse_file(filepath: Path | str, name: typing.Optional[str] = None) -> ast.P
     try:
         return program(module_name=name).parse(content)
     except P.ParseError as e:
-        raise ParseError from e
+        raise ParseError(e)
 
 
 def parens(pars):
