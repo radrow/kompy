@@ -32,6 +32,8 @@ t_void = ast.TypeVar(name='void')
 t_any = ast.TypeVar(name='$any')
 
 RETURN_VAR = '$RETURN'
+POSITIVE_IF_VAR = "$POSITIVE_IF"
+NEGATIVE_IF_VAR = "$NEGATIVE_IF"
 
 
 def t_fun(args, ret):
@@ -62,6 +64,8 @@ def init_env():
         'print_string': t_fun(t_string, t_void),
         'print': t_fun(t_any, t_void),
         'itos': t_fun(t_int, t_string),
+        POSITIVE_IF_VAR: False,
+        NEGATIVE_IF_VAR: False,
     }
 
 
@@ -176,12 +180,19 @@ def tc_block(env, tail, block):
                     expr=expr_t
                 )
             case ast.If(cond=cond, then_block=then_block, else_block=else_block):
+                old_env = env
+
                 cond_t = tc_expr(env, cond)
                 match_type(t_bool, cond_t.type)
+                
+                env = env.copy()
+                env[POSITIVE_IF_VAR] = env[POSITIVE_IF_VAR] or (else_block is not None)
                 then_block_t = tc_block(env, tail, then_block)
 
                 else_block_t = None
                 if else_block:
+                    env = old_env.copy()
+                    env[NEGATIVE_IF_VAR] = True
                     else_block_t = tc_block(env, tail, else_block)
                 elif tail:
                     raise TypecheckError("Missing return")
@@ -229,6 +240,14 @@ def tc_block(env, tail, block):
                     stmt,
                     value=value_t
                 )
+            case ast.KurwaXD():
+                if not env[POSITIVE_IF_VAR]:
+                    raise TypecheckError("Kurwa XD can only be used in an if-else context")
+                stmt_t = stmt
+            case ast.AlboChuj():
+                if not env[NEGATIVE_IF_VAR]:
+                    raise TypecheckError("Albo chuj can only be used in an if context")
+                stmt_t = stmt
         block_t.append(stmt_t)
 
     block_t = ast.Block(stmts=block_t)

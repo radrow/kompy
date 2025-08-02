@@ -162,6 +162,20 @@ class DopótyDopóki(Stmt):
     cond: Expr
     body: Block
 
+@frozen(auto_attribs=True, kw_only=True)
+class KurwaXD(Stmt):
+    """
+    Kurwa XD statement, used for debugging purposes
+    """
+    pass
+
+    
+@frozen(auto_attribs=True, kw_only=True)
+class AlboChuj(Stmt):
+    """
+    Albo chuj statement, used for debugging purposes
+    """
+    pass
 
 # ==============================================================================
 # Top-level declarations

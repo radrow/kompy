@@ -24,7 +24,7 @@ def parse_file(filepath: Path | str, name: typing.Optional[str] = None) -> ast.P
     try:
         return program(module_name=name).parse(content)
     except P.ParseError as e:
-        raise ParseError from e
+        raise ParseError(e)
 
 
 def parens(pars):
@@ -232,7 +232,12 @@ stmt_dopóty_dopóki = P.seq(
     body=block,
 ).combine_dict(ast.DopótyDopóki)
 
+stmt_kurwa_xd = P.seq(_kurwa=L.kw('kurwa XD'), _semi=L.semicolon).result(ast.KurwaXD())
+stmt_albo_chuj = P.seq(_chuj=L.kw('albo chuj'), _semi=L.semicolon).result(ast.AlboChuj())
+
 stmt.become(P.alt(
+    stmt_kurwa_xd,
+    stmt_albo_chuj,
     stmt_var_decl,
     stmt_assg,
     stmt_return,

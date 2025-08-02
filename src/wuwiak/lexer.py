@@ -7,6 +7,8 @@ keywords = [
     'return',
     'true',
     'false',
+    'kurwa XD',
+    'albo chuj'
 ]
 
 whitespaces = P.regex(r'\s+', P.re.MULTILINE).desc("whitespace")

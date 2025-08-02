@@ -43,6 +43,9 @@ class CompilerEnv:
     # Variable storage mapping
     var_storage_stack: typing.List[typing.Dict[str, Storage]] = field(default_factory=lambda: [{}])
 
+    positive_if_label_stack: typing.List[Instr.Label] = field(default_factory=list)
+    negative_if_label_stack: typing.List[Instr.Label] = field(default_factory=list)
+
     # Label generation
     label_counter: int = 0
     string_counter: int = 0
@@ -160,6 +163,31 @@ class CompilerEnv:
         """Add data directive to program"""
         self.program.add_data(directive)
 
+    def push_positive_label(self, label: Instr.Label):
+        self.positive_if_label_stack.append(label)
+
+    def pop_positive_label(self) -> Instr.Label:
+        if not self.positive_if_label_stack:
+            raise ValueError("No positive label to pop")
+        return self.positive_if_label_stack.pop()
+
+    def get_positive_label(self) -> Instr.Label:
+        if not self.positive_if_label_stack:
+            raise ValueError("No positive label available")
+        return self.positive_if_label_stack[-1]
+
+    def push_negative_label(self, label: Instr.Label):
+        self.negative_if_label_stack.append(label)
+
+    def pop_negative_label(self) -> Instr.Label:
+        if not self.negative_if_label_stack:
+            raise ValueError("No negative label to pop")
+        return self.negative_if_label_stack.pop()
+
+    def get_negative_label(self) -> Instr.Label:
+        if not self.negative_if_label_stack:
+            raise ValueError("No negative label available")
+        return self.negative_if_label_stack[-1]
 
 def compile_expr(env: CompilerEnv, expr: ast.Expr):
     """
@@ -450,6 +478,7 @@ def compile_comparison(env: CompilerEnv, op: str, args: typing.List[ast.Expr]):
 
 def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
     """Compile a statement"""
+    print(stmt)
     match stmt:
         case ast.SExpr(expr=expr):
             # Statement expression - compile but ignore result
@@ -512,6 +541,12 @@ def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
         case ast.DopótyDopóki(cond=cond, body=body):
             compile_dopóty_dopóki(env, cond, body)
 
+        case ast.KurwaXD():
+            compile_kurwa_xd(env)
+            
+        case ast.AlboChuj():
+            compile_albo_chuj(env)
+
         case _:
             raise ValueError(f"Unsupported statement type: {type(stmt)}")
 
@@ -524,6 +559,7 @@ def compile_if(env: CompilerEnv, cond: ast.Expr, then_block: ast.Block, else_blo
     cond_reg = env.get_target_reg()
 
     end_label = env.new_label("if_end")
+    then_label = env.new_label("if_then", keep=True)
     else_label = env.new_label("if_else", keep=True)
     if_false_label = else_label if else_block else end_label
 
@@ -534,7 +570,12 @@ def compile_if(env: CompilerEnv, cond: ast.Expr, then_block: ast.Block, else_blo
     )
 
     # Then block
+    env.emit(Instr.label(then_label).with_comment("Then block start"))
+    if else_block:
+        env.push_negative_label(else_label)
     compile_block(env, then_block)
+    if else_block:
+        env.pop_negative_label()
 
     if else_block:
         # Only emit jump if the then block didn't end with a breaking instruction
@@ -546,7 +587,9 @@ def compile_if(env: CompilerEnv, cond: ast.Expr, then_block: ast.Block, else_blo
         env.current_function.blocks[else_label] = else_riscv_block
         env.current_block = else_riscv_block
 
+        env.push_positive_label(then_label)
         compile_block(env, else_block)
+        env.pop_positive_label()
 
     # End block
     end_riscv_block = riscv.Block(name=end_label)
@@ -597,6 +640,16 @@ def compile_block(env: CompilerEnv, block: ast.Block):
         # Always pop the scope, even if compilation fails
         env.pop_scope()
 
+
+def compile_albo_chuj(env: CompilerEnv):
+    """Compile 'albo chuj' statement"""
+    label = env.get_positive_label()
+    env.emit(Instr.j(label).with_comment("Albo chuj"))
+
+def compile_kurwa_xd(env: CompilerEnv):
+    """Compile 'kurwa XD' statement"""
+    label = env.get_negative_label()
+    env.emit(Instr.j(label).with_comment("Kurwa XD"))
 
 def save_registers(env, regs):
     """Save registers onto the stack in order"""
