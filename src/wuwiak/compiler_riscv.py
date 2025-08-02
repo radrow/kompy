@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 
+from . import parser
 from . import ast
 from . import riscv
 from . import typechecker
@@ -477,9 +478,22 @@ def compile_comparison(env: CompilerEnv, op: str, args: typing.List[ast.Expr]):
                 Instr.seqz(target_reg, target_reg),
             )
 
+def get_stmt_kod(stmt):
+    (start_l, start_c), (end_l, end_c) = stmt.start, stmt.end
+    kod = parser.kod.split("\n")[start_l:end_l + 1]
+    kod[0] = ' ' * start_c + kod[0][start_c:]
+    kod[-1] = kod[-1][:end_c]
+    return '\n'.join(kod).rstrip() + '\n'
 
 def compile_stmt(env: CompilerEnv, stmt: ast.Stmt):
     """Compile a statement"""
+    if stmt.start:
+        compile_builtin_function(
+            env,
+            'print_string',
+            args=[ast.String(v=get_stmt_kod(stmt))]
+        )
+
     match stmt:
         case ast.SExpr(expr=expr):
             # Statement expression - compile but ignore result
@@ -568,7 +582,7 @@ def compile_if(env: CompilerEnv, cond: ast.Expr, then_block: ast.Block, else_blo
     else_label = env.new_label("if_else", keep=True)
     if_false_label = else_label if else_block else end_label
 
-    # Conditional jump
+     # Conditional jump
     env.emit(
         Instr.beqz(cond_reg, if_false_label)
         .with_comment("If-branch")

@@ -100,6 +100,8 @@ class Stmt(Node):
     """
     Statement
     """
+    start: typing.Optional[typing.Tuple[int, int]] = None
+    end: typing.Optional[typing.Tuple[int, int]] = None
 
 
 @frozen(auto_attribs=True)

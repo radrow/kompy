@@ -1,6 +1,7 @@
 from pathlib import Path
 import typing
 
+import attrs
 import parsy as P
 
 from . import error
@@ -16,10 +17,13 @@ class ParseError(error.WuwiakError):
     def __init__(self, pe):
         self.parsy_error = pe
 
+kod = ""
 
 def parse_file(filepath: Path | str, name: typing.Optional[str] = None) -> ast.Program:
+    global kod
     filepath = Path(filepath)
     content = filepath.read_text(encoding='utf-8')
+    kod = content
     name = name if name else filepath.stem
     try:
         return program(module_name=name).parse(content)
@@ -220,12 +224,37 @@ stmt_return = P.seq(
     _semi=L.semicolon,
 ).combine_dict(ast.Return)
 
+if_head = P.seq(
+    L.kw('if'),
+    expr,
+).map(lambda e: e[1])
+
 stmt_if = P.seq(
-    _if=L.kw('if'),
-    cond=expr,
+    cond=if_head.mark(),
     then_block=block,
     else_block=(L.kw('else') >> block).optional(),
-).combine_dict(ast.If)
+).map(lambda s: ast.If(cond=s['cond'][1],
+                       then_block=s['then_block'],
+                       else_block=s['else_block'],
+                       start=s['cond'][0],
+                       end=s['cond'][2]
+                       )
+      )
+
+dopóty_dopóki_head = P.seq(
+    L.kw('dopóty dopóki'),
+    expr,
+).map(lambda e: e[1])
+
+stmt_dopóty_dopóki = P.seq(
+    cond=dopóty_dopóki_head.mark(),
+    body=block,
+).map(lambda s: ast.DopótyDopóki(cond=s['cond'][1],
+                       body=s['body'],
+                       start=s['cond'][0],
+                       end=s['cond'][2]
+                       )
+      )
 
 stmt_kurwa = P.seq(
     _return=L.kw('kurwa XD'),
@@ -237,20 +266,17 @@ stmt_chuj = P.seq(
     _semi=L.semicolon,
 ).combine_dict(ast.Chuj)
 
-stmt_dopóty_dopóki = P.seq(
-    _dopóty=L.kw('dopóty dopóki'),
-    cond=expr,
-    body=block,
-).combine_dict(ast.DopótyDopóki)
+def with_loc(s):
+    return s.mark().map(lambda s: attrs.evolve(s[1], start=s[0], end=s[2]))
 
 stmt.become(P.alt(
+    with_loc(stmt_kurwa),
+    with_loc(stmt_chuj),
+    with_loc(stmt_var_decl),
+    with_loc(stmt_assg),
+    with_loc(stmt_return),
+    with_loc(stmt_expr),
     stmt_dopóty_dopóki,
-    stmt_kurwa,
-    stmt_chuj,
-    stmt_var_decl,
-    stmt_assg,
-    stmt_return,
-    stmt_expr,
     stmt_if,
 ).desc("statement"))
 
