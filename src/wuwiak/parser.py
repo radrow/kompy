@@ -134,7 +134,6 @@ def expr_op():
     stack = []
     skip = 0
     for i, entry in enumerate(postfix):
-        print(f"SKIP {skip}")
         if skip > 0:
             skip -= 1
             continue
@@ -157,7 +156,6 @@ def expr_op():
                             ast.Call(fun=entry, args=[op_r, op_rr])
                         ])
                 skip += 1
-                print(op_e)
 
             if not equaled:
                 op_r = stack.pop()
