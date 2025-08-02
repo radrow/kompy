@@ -132,11 +132,37 @@ def expr_op():
 
     # Build tree
     stack = []
-    for entry in postfix:
+    skip = 0
+    for i, entry in enumerate(postfix):
+        print(f"SKIP {skip}")
+        if skip > 0:
+            skip -= 1
+            continue
         if is_op(entry):
-            op_r = stack.pop()
-            op_l = stack.pop()
-            op_e = ast.Call(fun=entry, args=[op_l, op_r])
+            first = True
+            equaled = False
+            while i + skip != len(postfix) and postfix[i + skip] == '==':
+                equaled = True
+                if first:
+                    first = False
+                    op_r = stack.pop()
+                    op_l = stack.pop()
+                    op_e = ast.Call(fun=entry, args=[op_l, op_r])
+                else:
+                    op_rr = stack.pop()
+                    op_e = ast.Call(
+                        fun='&&',
+                        args=[
+                            op_e,
+                            ast.Call(fun=entry, args=[op_r, op_rr])
+                        ])
+                skip += 1
+                print(op_e)
+
+            if not equaled:
+                op_r = stack.pop()
+                op_l = stack.pop()
+                op_e = ast.Call(fun=entry, args=[op_l, op_r])
             stack.append(op_e)
         else:
             stack.append(entry)
