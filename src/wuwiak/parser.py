@@ -100,6 +100,8 @@ def op_bind(o):
         return 'R'  # TODO this should be `None`
     raise ValueError(f"Wtf operator {o}")
 
+MULTI_OPS = { '<', '>', '<=', '>=', '==' }
+
 
 @P.generate
 def expr_op():
@@ -132,17 +134,38 @@ def expr_op():
 
     # Build tree
     stack = []
-    for entry in postfix:
+    i = 0
+    while i < len(postfix):
+        entry = postfix[i]
         if is_op(entry):
-            op_r = stack.pop()
-            op_l = stack.pop()
-            op_e = ast.Call(fun=entry, args=[op_l, op_r])
+            args = [stack.pop(), stack.pop()]
+            if entry in MULTI_OPS:
+                for j in range(i + 1, len(postfix)):
+                    if postfix[j] != entry:
+                        break
+                    else:
+                        args.append(stack.pop())
+                        i += 1
+            op_e = desugar_op_tree(entry, args[::-1])
             stack.append(op_e)
         else:
             stack.append(entry)
+        i += 1
 
     assert len(stack) == 1
     return stack[0]
+
+def desugar_op_tree(op, args):
+    if len(args) < 2:
+        raise ValueError(f"Invalid number of arguments for operator {op}: {len(args)}")
+    elif len(args) == 2:
+        return ast.Call(fun = op, args=args)
+    else:
+        op_l = args[0]
+        op_r = args[1]
+        op_tail = desugar_op_tree(op, args[1:])
+        left_tree = ast.Call(fun=op, args=[op_l, op_r])
+        return ast.Call(fun=op, args=[left_tree, op_tail])
 
 
 expr.become(P.alt(

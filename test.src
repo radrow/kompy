@@ -1,0 +1,9 @@
+int f(int x) {
+  print(x);
+  return x;
+}
+
+void main() {
+  if (f(1) == f(2) == f(3)) {
+  }
+}
